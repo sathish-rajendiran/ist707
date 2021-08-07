@@ -1,0 +1,78 @@
+
+Read:  
+
+1 - http://bits.blogs.nytimes.com/2014/03/28/google-flu-trends-the-limits-of-big-data/
+2 - http://www.theatlantic.com/technology/archive/2014/03/in-defense-of-google-flu-trends/359688/
+
+Activity:
+
+Debate. Half of the group, build an argument to support the use of Big Data within this application.
+The other half of the group, build an argument to discredit the use of Big Data within this application.
+
+
+In 2008, Google released an experiment called Flu Trends, which attempted to predict the prevalence of the flu from searches that users made for about 40 flu-related queries.
+
+This was all years before people started even talking about "big data."
+
+
+What are the key factors? What is the underlying Science? Why are the arguments valid?
+
+
+Google Flu Trends and Google Dengue Trends are no longer publishing current estimates of Flu and Dengue fever based on search patterns
+
+The model was launched in 2008 and updated in 2009, 2013, and 2014
+
+2009-model estimates up until July 2013
+2013-model estimates from Aug. 2013 to July 2014
+2014-model estimates from Aug. 2014 onward
+
+
+
+Google Flu Trends: The Limits of Big Data
+BY STEVE LOHR MARCH 28, 2014 7:00 AM
+
+Limitation:
+
+overestimated the number of flu cases in the United States in the 2012-13 flu season 
+consistently overshot in the last few years
+Google Flu Trends’ estimate for the 2011-12 flu season was more than 50 percent higher than the cases reported by the Centers for Disease Control and Prevention
+period of more than two years ending in September 2013, the Google estimates were high in 100 out of 108 weeks.
+
+There was some improvement, but the service still overshot by about 30 percent
+
+The authors’ analysis found that simply using the recent trend of C.D.C. reports from doctors on influenza-like illness, which lag by two weeks, would have been a more accurate predictor than Google Flu Trends.
+
+Their technical criticism of Google Flu Trends is that it is not using a broader array of data analysis tools;combining Google Flu Trends with C.D.C. data, and applying a few tweaking techniques got better result than either could provide alone
+
+Greater value can be obtained by combining GFT with other near–real time health data
+
+Matt Mohebbi, co-inventor of Google Flu Trends "complementary signal" rather than a stand-alone forecasting tool.
+
+Tracking 45 flu-related search terms over billions of searches
+monitoring trends and making correlations
+“collective intelligence” of society in real time, 
+free of the human bias and hypotheses of traditional methods.
+
+Large errors in flu prediction were largely avoidable, which offers lessons for the use of big data.
+
+
+
+
+Perhaps the model overfit flu data
+Google adding more suggestions for users threw off the baseline
+nderlying media ecosystems or user search behavior are changing more quickly than anticipated
+
+There is great value that comes with triangulating these [flu tracking] systems," he said. "There isn't a ground truth for what exists. They are all proxies for flu illness or influenza-like illness, and there is great power that comes from combining these signals."
+
+New technology comes along. The hype that surrounds it exceeds that which its creators intended. The technology fails to live up to that false hope and is therefore declared a failure in the court of public opinion.
+Luckily, that's not the only arena that matters. Researchers both in and outside epidemiology have found Google Flu Trends and its methods useful and relevant. The initial Nature paper describing the experiment now has over 1,000 citations in many different fields.
+
+Take this research out of Johns Hopkins, published in early 2013: a team examined how to build a better influenza model, starting with emergency-room clinical data and trying to add anything else that might help including variables such as "GFT, meteorological data (temperature, change in temperature, and relative humidity) and temporal variables (Julian weeks, and seasonality)."
+The team found that Flu Trend data "was the only source of external information to provide statistically significant forecast improvements over the base model." That is to say, it played the precise role that it was designed for: providing a complementary signal. 
+
+
+
+
+
+
+

@@ -1,0 +1,46 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+-----------------------------------------------------------------------------------
+Title: "IST707 Project"
+Name: Sathish Kumar Rajendiran ;Sharat Sripada ; Daphne Chang
+Date: 07/30/2020
+-----------------------------------------------------------------------------------
+
+
+# import libraries 
+```{r}
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+EnsurePackage("tensorflow")
+EnsurePackage("ggplot2")
+EnsurePackage("RWeka")
+cat("All Pacakges loaded")
+```
+
+```{r}
+#Install Tensorflow package
+  install_tensorflow()
+
+
+```
+
+```{r}
+#validate installation of tensorflow()
+  library(tensorflow)
+  tf$constant("Hellow Tensorflow")
+  
+  # help(tensorflow)
+
+```
+
+
+

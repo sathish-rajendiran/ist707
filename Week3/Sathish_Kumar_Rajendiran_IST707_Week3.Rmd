@@ -1,0 +1,143 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+-----------------------------------------------------------------------------------
+Title: "IST707 Association Rule - Async"
+Name: Sathish Kumar Rajendiran
+Date: 07/18/2020
+-----------------------------------------------------------------------------------
+Exercise: 
+
+# import libraries      
+```{r}
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+EnsurePackage("arules")
+EnsurePackage("arulesViz")
+EnsurePackage("datasets")
+
+```
+
+```{r}
+data(Groceries)
+Groceries
+```
+
+
+```{r}
+# # Load Story teller data 
+#   filepath <- "/Users/sathishrajendiran/Documents/R/groceries.csv"
+#   # function readFiles
+#   readFiles <- function(fpath) {
+#       dftemp <- data.frame(read.csv(fpath,na.strings=c(""," ","NA"),header = 0),stringsAsFactors=FALSE)
+#       return(dftemp)
+#     }
+#   Groceries <- readFiles(filepath) 
+#   
+  dim(Groceries) #30 rows  8 columns  
+  
+# Preview the structure 
+  str(Groceries)
+
+# Analyze the spread  
+  summary(Groceries)
+  
+# Preview top few rows  
+  head(Groceries)
+  
+  View(Groceries)
+
+```
+
+
+```{r}
+# Create an item frequency plot for the top 20 items
+itemFrequencyPlot(Groceries,topN=20,type="absolute")
+```
+```{r}
+# Get the rules
+rules <- apriori(Groceries, parameter = list(supp = 0.001, conf = 0.8))
+```
+
+
+```{r}
+# Show the top 5 rules, but only 2 digits
+options(digits=2)
+inspect(rules[1:5])
+summary(rules)
+```
+
+```{r}
+rules<-sort(rules, by="confidence", decreasing=TRUE)
+rules
+
+rules <- apriori(Groceries, parameter = list(supp = 0.001, conf = 0.8,maxlen=3))
+View(rules)
+```
+
+```{r}
+subset.matrix <- is.subset(rules, rules)
+subset.matrix[lower.tri(subset.matrix, diag=T)] <- NA
+redundant <- colSums(subset.matrix, na.rm= T) >= 1
+# redundant
+rules.pruned <- rules[!redundant]
+rules <- rules.pruned
+```
+
+```{r}
+rules<-apriori(data=Groceries, parameter=list(supp=0.001,conf = 0.08), 
+               appearance = list(default="lhs",rhs="whole milk"),
+               control = list(verbose=F))
+rules<-sort(rules, decreasing=TRUE,by="confidence")
+inspect(rules[1:5])
+```
+
+```{r}
+rules<-apriori(data=Groceries, parameter=list(supp=0.001,conf = 0.15,minlen=2), 
+               appearance = list(default="rhs",lhs="whole milk"),
+               control = list(verbose=F))
+rules<-sort(rules, decreasing=TRUE,by="confidence")
+inspect(rules[1:5])
+```
+
+```{r}
+#visualization
+plot(rules,method="graph",engine='interactive',shading=NA)
+```
+
+```{r}
+# Load retail data 
+  filepath <- "/Users/sathishrajendiran/Documents/R/retail.csv"
+
+  retail=read.transactions(filepath, format="basket", sep="," )
+  retail
+  rules <- apriori(retail, parameter = list(supp = 0.001, conf = 0.8,maxlen=3))
+  inspect(rules[1:5])
+```
+
+```{r}
+summary(rules)
+```
+
+```{r}
+rules<-apriori(data=retail, parameter=list(supp=0.001,conf = 0.15,minlen=2), 
+               appearance = list(default="rhs",lhs="38"),
+               control = list(verbose=F))
+rules<-sort(rules, decreasing=TRUE,by="confidence")
+inspect(rules[1:5])
+```
+
+```{r}
+#visualization
+plot(rules,method="graph",engine='interactive',shading=NA)
+```
+

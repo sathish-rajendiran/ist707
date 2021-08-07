@@ -1,0 +1,66 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+-----------------------------------------------------------------------------------
+Title: "IIST 707 Data Analytics | Week1"
+Name: Sathish Kumar Rajendiran
+Date: 07/5/2020
+-----------------------------------------------------------------------------------
+Exercise: 
+        Story Teller
+        
+        
+# Install necessary packages
+
+```{r}
+# import libraries
+
+install.packages(pkgs=c("ggplot2","tidyverse"),repos = "http://cran.us.r-project.org")
+
+library(ggplot2)
+library(tidyverse)
+```
+```{r}
+#import csv files into data frames
+
+  story_fpath <- "/Users/sathishrajendiran/Documents/R/datastoryteller.csv"
+  fixed_story_fpath <- "/Users/sathishrajendiran/Documents/R/datastorytellerFIXED.csv"
+
+  # function readFiles
+  readFiles <- function(fpath)
+    {
+    dftemp <- data.frame(read.csv(fpath),stringsAsFactors=FALSE,na.strings = "NA")
+    return(dftemp)
+  }
+  
+  MyStoryData_old <- readFiles(story_fpath) 
+  MyStoryData <- readFiles(fixed_story_fpath) 
+  
+  (head(MyStoryData))
+```
+
+
+```{r}
+View(MyStoryData)
+
+## Check for missing values
+Total <-sum(is.na(MyStoryData))
+cat("The number of missing values in StoryTeller data is ", Total )
+
+```
+
+```{r}
+ggplot(stack(MyStoryData), aes(x = ind, y = values, color=ind)) +
+  geom_boxplot()
+
+```
+```{r}
+MyStoryData$School =="A"
+
+JustSchoolA<-subset(MyStoryData, School == "A" )
+(JustSchoolA)
+(str(JustSchoolA))
+```
+

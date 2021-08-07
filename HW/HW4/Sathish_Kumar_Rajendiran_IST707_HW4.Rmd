@@ -1,0 +1,345 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+-----------------------------------------------------------------------------------
+Title: "IST707 HW4 Use Clustering to Solve a Mystery in History"
+Name: Sathish Kumar Rajendiran
+Date: 07/30/2020
+-----------------------------------------------------------------------------------
+Exercise: 
+Use clustering methods to solve a mystery in history: who wrote the disputed essays, Hamilton or Madison?
+
+In this homework you are provided with the Federalist Paper data set. The features are a set of
+“function words”, for example, “upon”. The feature value is the percentage of the word
+occurrence in an essay. For example, for the essay “Hamilton_fed_31.txt”, if the function word
+“upon” appeared 3 times, and the total number of words in this essay is 1000, the feature value is
+3/1000=0.3%
+Now you are going to try solving this mystery using clustering algorithms k-Means, EM, and
+HAC. Document your analysis process and draw your conclusion on who wrote the disputed
+essays. Provide evidence for each method to demonstrate what patterns had been learned to
+predict the disputed papers, for example, visualize the clustering results and show where the
+disputed papers are located in relation to Hamilton and Madison's papers. By the way, where are
+the papers with joint authorship located? For k-Means and EM, analyze the centroids to explain
+which attributes are most useful for clustering. Hint: the centroid values on these dimensions
+should be far apart from each other to be able to distinguish the clusters.
+
+
+      
+```{r}
+# import libraries 
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+EnsurePackage("dplyr")
+EnsurePackage("ggplot2")
+EnsurePackage("sqldf")
+EnsurePackage("reshape2")
+EnsurePackage("wordcloud")
+EnsurePackage("RColorBrewer")
+EnsurePackage("tidyverse")
+EnsurePackage("tidytext")
+EnsurePackage("factoextra")
+EnsurePackage("NbClust")
+cat("All Packages are available")
+```
+```{r}
+#Load CSV into data frame
+  filepath <- "/Users/sathishrajendiran/Documents/R/fedPapers85.csv"
+  fedPapersDF <- data.frame(read.csv(filepath,na.strings=c(""," ","NA")),stringsAsFactors=FALSE)
+  dim(fedPapersDF) #85 72
+```
+
+
+```{r}
+# Preview the structure 
+  str(fedPapersDF)
+
+# Analyze the spread  
+  summary(fedPapersDF)
+  
+# Preview top few rows  
+  head(fedPapersDF)
+  
+# compare number of articles by authors
+  table(fedPapersDF$author)
+  
+# view the data
+  View(fedPapersDF)
+
+```
+
+```{r}
+fedPapersDF1 <- subset(fedPapersDF,select=-filename)
+fedPapersDF1<- melt(fedPapersDF1,id=c("author"))
+fedPapersDF1
+
+agg_fedPapersDF <- aggregate(fedPapersDF1$value,by=list(author=fedPapersDF1$author,word=fedPapersDF1$variable),FUN=sum)
+agg_fedPapersDF
+
+unique(agg_fedPapersDF$author) # [1] dispt    Hamilton HM       Jay      Madison 
+
+```
+
+```{r}
+# build dataframes for wordcloud
+
+#disputed articles wordcloud dataframe
+dispt_df <- agg_fedPapersDF[agg_fedPapersDF$author=='dispt',2:3]
+dispt_df <- dispt_df[order(dispt_df$x,decreasing = TRUE),]
+colnames(dispt_df) <- c('word','freq')
+dispt_df
+
+# Build Word Cloud on dispt_df's
+dispt_df
+dispt_df <- dispt_df[!grepl('the|to|and|of|which|in.|by|be|that|it|a|is|as|will|would|for|from|or',dispt_df$word),] #remove common words across all articles 
+wordcloud(dispt_df$word,dispt_df$freq,rot.per = .15,random.order = FALSE,colors = brewer.pal(10,"Paired"),scale=c(6,.5))
+```
+
+```{r}
+#Hamilton's articles wordcloud dataframe
+Hamilton_df <- agg_fedPapersDF[agg_fedPapersDF$author=='Hamilton',2:3]
+Hamilton_df <- Hamilton_df[order(Hamilton_df$x,decreasing = TRUE),]
+colnames(Hamilton_df) <- c('word','freq')
+Hamilton_df
+
+# Build Word Cloud on Hamilton_df's
+Hamilton_df
+Hamilton_df <- Hamilton_df[!grepl('the|to|and|of|which|in.|by|be|that|it|a|is|as|will|would|for|from|or',Hamilton_df$word),] #remove common words across all articles 
+wordcloud(Hamilton_df$word,Hamilton_df$freq,rot.per = .15,random.order = FALSE,colors = brewer.pal(10,"Paired"),scale=c(6,.5))
+```
+
+
+```{r}
+
+#Madison's articles wordcloud dataframe
+Madison_df <- agg_fedPapersDF[agg_fedPapersDF$author=='Madison',2:3]
+Madison_df <- Madison_df[order(Madison_df$x,decreasing = TRUE),]
+colnames(Madison_df) <- c('word','freq')
+Madison_df
+
+# Build Word Cloud on Madison's
+Madison_df
+Madison_df <- Madison_df[!grepl('the|to|and|of|which|in.|by|be|that|it|a|is|as|will|would|for|from|or',Madison_df$word),] #remove common words across all articles 
+wordcloud(Madison_df$word,Madison_df$freq,rot.per = .15,random.order = FALSE,colors = brewer.pal(10,"Paired"),scale=c(6,.5))
+```
+
+
+```{r}
+#HM's articles wordcloud dataframe
+HM_df <- agg_fedPapersDF[agg_fedPapersDF$author=='HM',2:3]
+HM_df <- HM_df[order(HM_df$x,decreasing = TRUE),]
+colnames(HM_df) <- c('word','freq')
+HM_df
+
+# Build Word Cloud on HM's
+HM_df
+HM_df <- HM_df[!grepl('the|to|and|of|which|in.|by|be|that|it|a|is|as|will|would|for|from|or',HM_df$word),] #remove common words across all articles 
+wordcloud(HM_df$word,HM_df$freq,rot.per = .15,random.order = FALSE,colors = brewer.pal(10,"Paired"),scale=c(6,.5))
+```
+
+```{r}
+#Jay' article wordcloud dataframe
+Jay_df <- agg_fedPapersDF[agg_fedPapersDF$author=='Jay',2:3]
+Jay_df <- Jay_df[order(Jay_df$x,decreasing = TRUE),]
+colnames(Jay_df) <- c('word','freq')
+Jay_df
+
+# Build Word Cloud on Jay's
+Jay_df
+Jay_df <- Jay_df[!grepl('the|to|and|of|which|in.|by|be|that|it|a|is|as|will|would|for|from|or',Jay_df$word),] #remove common words across all articles 
+wordcloud(Jay_df$word,Jay_df$freq,rot.per = .15,random.order = FALSE,colors = brewer.pal(10,"Paired"),scale=c(6,.5))
+```
+```{r}
+#clustering | K-means clustering with 3 clusters of sizes 52, 28, 5
+    str(fedPapersDF)
+    summary(fedPapersDF)
+    
+    # fedPapersDF[ , 3:ncol(fedPapersDF) ][ fedPapersDF[ , 3:ncol(fedPapersDF) ] > 0] <- 1
+    # NewfedPapersDF <- fedPapersDF[,3:ncol(fedPapersDF)]
+
+#Cleaning before Clustering
+
+    #1. Keep only columns in scope
+    MfedPapersDF <- fedPapersDF[,3:ncol(fedPapersDF)]
+    
+
+    #2. Check for missing values
+    #find incomplete records
+    nrow(MfedPapersDF[!complete.cases(MfedPapersDF),]) #0
+    
+
+    #3. Find na columns
+    clnames <- colnames(MfedPapersDF)[colSums(is.na(MfedPapersDF)) > 0]
+    clnames #0
+
+
+
+
+```
+
+```{r}
+#Clustering using K-means with 3 clusters
+  set.seed(123)
+  model_k3 <- kmeans(na.omit(MfedPapersDF),3)
+  model_k3
+  
+  # K-means clustering with 3 clusters of sizes 52, 28, 5
+  
+  clusplot(MfedPapersDF,model_k3$cluster,color=TRUE,shade=FALSE,labels=0,lines=0,main='K-means with 3 clusters')
+```
+
+```{r}
+#combine cluster info and analyze the spread
+  mycluster <- cbind(fedPapersDF,model_k3$cluster)
+  myclusterDF <- data.frame(mycluster$author,mycluster$`model_k3$cluster`)
+  colnames(myclusterDF) <- c('author','cluster')
+# myclusterDF
+
+  agg_myclusterDF <- sqldf(' select author,cluster,count(*) n from myclusterDF group by author,cluster' )
+  agg_myclusterDF <- agg_myclusterDF[order(agg_myclusterDF$author,decreasing = FALSE),]
+  agg_myclusterDF
+```
+
+
+```{r}
+
+  #Clustering using K-means with 4 clusters
+  set.seed(123)
+  model_k4 <- kmeans(na.omit(MfedPapersDF),4)
+  model_k4
+  # K-means clustering with 4 clusters of sizes 27, 20, 33, 5
+  
+  clusplot(MfedPapersDF,model_k4$cluster,color=TRUE,shade=FALSE,labels=0,lines=0,main='K-means with 4 clusters')
+```
+
+
+
+
+```{r}
+#combine cluster info and analyze the spread
+  mycluster_k4 <- cbind(fedPapersDF,model_k4$cluster)
+  myclusterDF_k4 <- data.frame(mycluster_k4$author,mycluster_k4$`model_k4$cluster`)
+  colnames(myclusterDF_k4) <- c('author','cluster')
+
+  agg_myclusterDF_k4 <- sqldf(' select author,cluster,count(*) n from myclusterDF_k4 group by author,cluster' )
+  agg_myclusterDF_k4 <- agg_myclusterDF_k4[order(agg_myclusterDF_k4$author,decreasing = FALSE),]
+  agg_myclusterDF_k4
+```
+
+```{r}
+#Clustering using K-means with 3 clusters
+  set.seed(123)
+  model_k2 <- kmeans(na.omit(MfedPapersDF),2)
+  model_k2
+# K-means clustering with 2 clusters of sizes 34, 51
+  
+  clusplot(MfedPapersDF,model_k2$cluster,color=TRUE,shade=FALSE,labels=0,lines=0,main='K-means with 2 clusters')
+```
+
+```{r}
+#combine cluster info and analyze the spread
+  mycluster_k2 <- cbind(fedPapersDF,model_k2$cluster)
+  myclusterDF_k2 <- data.frame(mycluster_k2$author,mycluster_k2$`model_k2$cluster`)
+  colnames(myclusterDF_k2) <- c('author','cluster')
+
+  agg_myclusterDF_k2 <- sqldf(' select author,cluster,count(*) n from myclusterDF_k2 group by author,cluster' )
+  agg_myclusterDF_k2 <- agg_myclusterDF_k2[order(agg_myclusterDF_k2$author,decreasing = FALSE),]
+  agg_myclusterDF_k2
+```
+
+
+
+```{r}
+# fviz_nbclust(MfedPapersDF, kmeans, method = c("silhouette", "wss", "gap_stat"))
+
+set.seed(123)
+# function to compute total within-cluster sum of squares
+factoextra::fviz_nbclust(MfedPapersDF, kmeans, method = "wss", k.max = 24) + theme_minimal() + ggtitle("the Elbow Method")
+
+set.seed(123)
+# Silhouette method
+factoextra::fviz_nbclust(MfedPapersDF, kmeans, method = "silhouette")+ labs(subtitle = "Silhouette method")
+set.seed(123)
+# Gap statistic
+factoextra::fviz_nbclust(MfedPapersDF, kmeans, nstart = 25,  method = "gap_stat", nboot = 50)+ labs(subtitle = "Gap statistic method")
+```
+
+```{r}
+res.nbclust <- NbClust(MfedPapersDF, distance = "euclidean",
+                  min.nc = 2, max.nc = 6, 
+                  method = "complete", index ="all")
+factoextra::fviz_nbclust(res.nbclust) + theme_minimal() + ggtitle("NbClust's optimal number of clusters")
+```
+
+```{r}
+
+  #Clustering using K-means with 2 clusters
+  set.seed(123)
+  model_k2 <- kmeans(na.omit(MfedPapersDF),2)
+  model_k2
+  # K-means clustering with 2 clusters of sizes 25, 17, 17, 21, 5
+  
+  clusplot(MfedPapersDF,model_k2$cluster,color=TRUE,shade=FALSE,labels=0,lines=0)
+```
+
+
+```{r}
+#combine cluster info and analyze the spread
+  mycluster_k2 <- cbind(fedPapersDF,model_k2$cluster)
+  myclusterDF_k2 <- data.frame(mycluster_k2$author,mycluster_k2$`model_k2$cluster`)
+  colnames(myclusterDF_k2) <- c('author','cluster')
+# myclusterDF_52
+
+  agg_myclusterDF_k2 <- sqldf(' select author,cluster,count(*) n from myclusterDF_k2 group by author,cluster' )
+  agg_myclusterDF_k2 <- agg_myclusterDF_k2[order(agg_myclusterDF_k2$author,decreasing = FALSE),]
+  agg_myclusterDF_k2
+```
+
+
+```{r}
+EnsurePackage("clustree")
+tmp <- NULL
+for (k in 1:6){
+  tmp[k] <- kmeans(MfedPapersDF, k, nstart = 30)
+}
+df <- data.frame(tmp)
+# add a prefix to the column names
+colnames(df) <- seq(1:6)
+colnames(df) <- paste0("k",colnames(df))
+# get individual PCA
+df.pca <- prcomp(df, center = TRUE, scale. = FALSE)
+ind.coord <- df.pca$x
+ind.coord <- ind.coord[,1:2]
+df <- bind_cols(as.data.frame(df), as.data.frame(ind.coord))
+clustree(df, prefix = "k")
+```
+
+
+```{r}
+#HAC
+d <- dist(as.matrix(MfedPapersDF))
+hc <- hclust(d)
+plot(hc)
+```
+
+```{r}
+#HAC with Complete method
+  complete_Cluster <- hclust(dist(MfedPapersDF),method = 'complete')
+  complete_Cluster
+  plot(complete_Cluster)
+```
+
+```{r}
+average_Cluster <- hclust(dist(MfedPapersDF),method = 'average')
+average_Cluster
+plot(average_Cluster)
+```
+

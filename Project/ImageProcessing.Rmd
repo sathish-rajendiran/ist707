@@ -1,0 +1,91 @@
+---
+title: "Untitled"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+Import libraries
+
+
+
+```{r cars}
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+EnsurePackage("tensorflow")
+EnsurePackage("keras")
+EnsurePackage("ggplot2")
+EnsurePackage("RWeka")
+EnsurePackage("tesseract")
+EnsurePackage("magick")
+EnsurePackage("stringr")
+EnsurePackage("tibble")
+EnsurePackage("cld2")
+EnsurePackage("cld3")
+EnsurePackage("taxize")
+cat("All Pacakges loaded")
+```
+
+
+```{r}
+# filepath  
+  filenames <- fs::dir_ls("/Users/sathishrajendiran/Documents/R/images")
+  str(filenames)
+#images array
+  filenames
+# Readimage
+  image1 <- image_read(filenames[6])
+  image1
+# convert the image to black and white
+  image1gs <- image_convert(image1,type = "grayscale")
+  image1gs
+
+# increase brightness
+  image1BR <- image_modulate(image1,brightness = 120)
+  image1BR
+  image1ENH <- image_enhance(image1)
+  image1ENH
+  image1MDN <- image_median(image1)
+  image1MDN
+  image1CNTRST <- image_contrast(image1) 
+  image1CNTRST
+```
+
+
+```{r}
+txt <- image_ocr(image1)
+txt <- str_split(txt, "\n", simplify = TRUE)
+# txt <- str_remove_all(txt, "[0-9]")
+txt <- str_remove_all(txt, "[:punct:]")
+txt <- str_remove_all(txt, " *\\b[[:alpha:]]{1,2}\\b *") # remove one letter words
+txt <- str_remove_all(txt, "~")
+txt <- trimws(txt)
+txt <- txt[txt != ""]
+
+# txt <- gnr_resolve(txt,best_match_only = TRUE)
+txt
+
+```
+
+```{r}
+
+# keep only the words that are recognized as either Latin
+  # or English by cld2 or cld3
+
+detect_language(txt)
+
+
+```
+
+
+

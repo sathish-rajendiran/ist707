@@ -1,0 +1,739 @@
+---
+title: "Image retrieval using Google Landmarks data"
+output: html_notebook
+---
+
+Image retrieval using Google Landmarks data - Traditional Models
+* Task 1: Import Libraries
+* Task 2: Import Images
+* Task 3: Data Exploration
+* Task 4: Preprocess the Data
+* Task 5: Build the Model
+* Task 6: Compile the Model
+* Task 7: Train and Evaluate the Model
+* Task 8: Make Predictions on Test Data
+
+
+```{r}
+## Task 1: Import Libraries ##
+EnsurePackage <- function(x){x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+
+#Data Processing
+EnsurePackage("knitr")
+EnsurePackage("tidyr")
+EnsurePackage("pbapply")
+EnsurePackage("sqldf")
+EnsurePackage("dplyr")
+EnsurePackage("stringr")
+EnsurePackage("tidyverse")
+
+#Image Processing
+# BiocManager::install("EBImage")
+EnsurePackage("EBImage")
+EnsurePackage("BiocManager")
+
+#Visualization
+EnsurePackage("ggplot2")
+EnsurePackage("RColorBrewer")
+
+#Machine Learning
+EnsurePackage("FactoMineR")
+EnsurePackage("caret")
+# EnsurePackage("keras")
+EnsurePackage("rpart.plot")  # Decision Tree
+EnsurePackage("randomForest") # Random Forest
+EnsurePackage("class") # kNN
+EnsurePackage("e1071")
+
+cat("All Pacakges loaded")
+```
+
+```{r setup, include=FALSE,cache=FALSE}
+## setting working directory
+opts_knit$set(root.dir = "/Users/sathishrajendiran/Documents/R/CNN/data")
+```
+
+```{r }
+cat("current working directory is",getwd())
+```
+
+```{r}
+# image size to scale down to (original size varied)
+width <- 28
+height <- 28
+
+## pbapply is a library to add progress bar *apply functions
+## pblapply will replace lapply
+
+extract_feature <- function(dir_path, width, height, label_id, add_label = TRUE) {
+  img_size <- width*height
+  ## List images in path
+  images_names <- list.files(dir_path)
+  if (add_label) {
+    ## Set label
+    label <- label_id
+  }
+  print(paste("Start processing", length(images_names), "images"))
+  ## This function will resize an image, turn it into greyscale
+  feature_list <- pblapply(images_names, function(imgname) {
+    ## Read image
+    img <- readImage(file.path(dir_path, imgname))
+    ## Resize image
+    img_resized <- resize(img, w = width, h = height)
+    ## Set to grayscale
+    grayimg <- channel(img_resized, "gray")
+    ## Get the image as a matrix
+    img_matrix <- grayimg@.Data
+    ## Coerce to a vector
+    img_vector <- as.vector(t(img_matrix))
+    return(img_vector)
+  })
+  ## bind the list of vector into matrix
+  feature_matrix <- do.call(rbind, feature_list)
+  feature_matrix <- as.data.frame(feature_matrix)
+  ## Set names
+  names(feature_matrix) <- paste0("pixel", c(1:img_size))
+  if (add_label) {
+    ## Add label
+    feature_matrix <- cbind(label = label, feature_matrix)
+  }
+  return(feature_matrix)
+}
+```
+
+
+```{r}
+## Task 2: Import myImages_20409 ##
+image_20409_dir <- "/Users/sathishrajendiran/Documents/R/CNN/data/train/20409"
+image_20409_dir
+#use EBImage to resize the images to 28×28 and turn them into greyscale
+train_data_20409 <- extract_feature(dir_path = image_20409_dir, width = width, height = height,label_id = 20409)
+#Each image will be turned into a vector of length 784, with each element representing the value in a pixel
+dim(train_data_20409) #[1] 879 785
+```
+
+```{r}
+## Task 2: Import myImages_83144 ##
+image_83144_dir <- "/Users/sathishrajendiran/Documents/R/CNN/data/train/83144"
+image_83144_dir
+#use EBImage to resize the images to 28×28 and turn them into greyscale
+train_data_83144 <- extract_feature(dir_path = image_83144_dir, width = width, height = height,label_id = 83144)
+#Each image will be turned into a vector of length 784, with each element representing the value in a pixel
+dim(train_data_83144)
+```
+
+
+
+```{r}
+## Task 2: Import myImages_113209 ##
+image_113209_dir <- "/Users/sathishrajendiran/Documents/R/CNN/data/train/113209"
+image_113209_dir
+#use EBImage to resize the images to 28×28 and turn them into greyscale
+train_data_113209 <- extract_feature(dir_path = image_113209_dir, width = width, height = height,label_id = 113209)
+#Each image will be turned into a vector of length 784, with each element representing the value in a pixel
+dim(train_data_113209)
+```
+
+```{r}
+## Task 2: Import myImages_126637 ##
+image_126637_dir <- "/Users/sathishrajendiran/Documents/R/CNN/data/train/126637"
+image_126637_dir
+#use EBImage to resize the images to 28×28 and turn them into greyscale
+train_data_126637 <- extract_feature(dir_path = image_126637_dir, width = width, height = height,label_id = 126637)
+#Each image will be turned into a vector of length 784, with each element representing the value in a pixel
+dim(train_data_126637)
+# head(train_data_126637)
+```
+
+
+```{r}
+#Each image will be turned into a vector of length 784, with each element representing the value in a pixel
+dim(train_data_20409) #[1] 879 785
+dim(train_data_83144) #[1] 870 785
+dim(train_data_113209) #[1] 567 785
+dim(train_data_126637) #[1] 1115  785
+
+## Bind rows in a single dataset
+trainImagesAllDF <- rbind(train_data_20409, train_data_83144,train_data_113209,train_data_126637)
+dim(trainImagesAllDF) #[1] 3431  785
+
+#convert label column to factor
+trainImagesAllDF$label <- as.factor(trainImagesAllDF$label)
+dim(trainImagesAllDF)
+
+str(trainImagesAllDF)
+```
+
+
+```{r}
+# # compare number of images by labels
+  x <- data.frame(table(trainImagesAllDF$label))
+  colourCount = length(unique(trainImagesAllDF$label))
+  getPalette = colorRampPalette(brewer.pal(5, "Set3"))
+  
+  gp_all <- ggplot(x, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  gp_all <- gp_all + ggtitle("Images by labels") + xlab("Labels") + ylab("Number of Images")
+  gp_all <- gp_all +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  gp_all
+```
+
+```{r}
+# 1. Training Set Preparation
+  set.seed(234)  
+  # lets split the Training data set int into training and test datasets.creates a value for dividing the data into train and test.
+  # In this case the value is defined as   80% of the number of rows in the dataset
+  sample_size = floor(0.80*nrow(trainImagesAllDF)) 
+
+  # set seed to ensure you always have same random numbers generated #324 has 100% training accuracy 
+  train_index = sample(seq_len(nrow(trainImagesAllDF)),size = sample_size)
+
+  train_set =trainImagesAllDF[train_index,] #creates the training dataset with row numbers stored in train_index
+
+  test_set=trainImagesAllDF[-train_index,]  # creates the test dataset excluding the row numbers mentioned in train_index
+
+  cat("\nImages by Labels:")
+  table(trainImagesAllDF$label)
+  cat("\nTrain_set - Images by Labels:")
+  table(train_set$label)
+  cat("\nTest_set - Images by Labels:")
+  table(test_set$label)
+  
+  dim(trainImagesAllDF)
+  dim(train_set)
+  dim(test_set)
+  
+```
+
+
+```{r}
+# # compare number of images by labels from train_set
+# str(train_set)
+
+  t_train <- data.frame(table(train_set$label))
+  t_train
+  colourCount = length(unique(train_set$label))
+  getPalette = colorRampPalette(brewer.pal(5, "Set3"))
+
+  gp_train_set <- ggplot(t_train, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  gp_train_set <- gp_train_set + ggtitle("Train data images by labels ") + xlab("Labels") + ylab("Number of Images")
+  gp_train_set <- gp_train_set +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  gp_train_set
+```
+
+
+```{r}
+
+# # compare number of images by labels from test_set
+# str(test_set)
+
+  t_test <- data.frame(table(test_set$label))
+  colourCount = length(unique(test_set$label))
+  getPalette = colorRampPalette(brewer.pal(5, "Set3"))
+
+  gp_test_set <- ggplot(t_test, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  gp_test_set <- gp_test_set + ggtitle("Test data images by labels") + xlab("Labels") + ylab("Number of Images")
+  gp_test_set <- gp_test_set +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  gp_test_set
+  # t_test
+```
+
+```{r}
+# Section 2: Build and tune decision tree models
+    # grow tree
+  rtree <- rpart(label~. ,data=train_set, method='class', cp=0,minsplit = 1, maxdepth = 5)
+  #summarize rtree values
+  summary(rtree)
+  plotcp(rtree) # plot cross-validation results
+  printcp(rtree) # plot cross-validation results
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree,main="Image Classification Tree", extra= 102) # plot decision tree
+  rsq.rpart(rtree) # plot approximate R-squared and relative error for different splits (2 plots)
+
+```
+
+
+```{r}
+# Section 3: Prediction | Test Phase
+
+  # cat("\nImages by Labels:")
+  # table(trainImagesAllDF$label)
+  # cat("\nTrain_set - Images by Labels:")
+  # table(train_set$label)
+  # cat("\nTest_set - Images by Labels:")
+  # table(test_set$label)
+  
+  # dim(train_set)
+  # dim(test_set)
+
+  # Section 3: Prediction | Test Phase
+  predict_unseen <- predict(rtree, test_set, type = 'class')
+  # predict_unseen
+  table_test_matrix <- table(test_set$label, predict_unseen)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_test_matrix)
+  
+```
+
+
+```{r}
+# Random Forest prediction of Digit Tokenizer data
+
+  # View(fedPapersDF1)
+  cat("\n All Images by Labels:")
+  table(test_set$label)
+    
+  fit <- randomForest(y=test_set$label, x=test_set[2:ncol(test_set)], data=test_set, ntree=50
+                      , keep.forest=FALSE, importance=TRUE)
+  
+  print(fit) # view results
+  importance(fit) # importance of each predictor
+  
+  rf_importance <- data.frame(importance(fit)) # importance of each predictor
+  rf_importance
+  
+```
+
+```{r}
+#Principal Component Analysis
+pca_digits <- PCA(t(select(trainImagesAllDF,-label)),ncp=30)
+```
+
+```{r}
+
+imagePCATrainDF <- data.frame(trainImagesAllDF$label,pca_digits$var$coord)
+dim(imagePCATrainDF) #[1] 3431   31
+
+str(imagePCATrainDF)
+# head(imagePCATrainDF)
+```
+
+```{r}
+#Rename Columns 
+colnames(imagePCATrainDF) <- c("label","dim1","dim2","dim3","dim4","dim5","dim6","dim7","dim8","dim9","dim10","dim11","dim12","dim13"
+                                ,"dim14","dim15","dim16","dim17","dim18","dim19","dim20","dim21","dim22","dim23","dim24","dim25"
+                                ,"dim26","dim27","dim28","dim29","dim30")
+str(imagePCATrainDF)
+dim(imagePCATrainDF)
+# imagePCATrainDF
+```
+
+```{r}
+# Prepare train and test data from the revised PCA Train dataset.
+  sample_size = floor(0.80*nrow(imagePCATrainDF)) 
+  # set seed to ensure you always have same random numbers generated #324 has 100% training accuracy 
+  train_index = sample(seq_len(nrow(imagePCATrainDF)),size = sample_size)
+  # train_index
+  pca_train_set =imagePCATrainDF[train_index,] #creates the training dataset with row numbers stored in train_index
+  # pca_train_set
+  # # table(train_data$author)
+  pca_test_set=imagePCATrainDF[-train_index,]  # creates the test dataset excluding the row numbers mentioned in train_index
+  # # table(test_data$author)
+  cat("\nImages by Labels:")
+  table(imagePCATrainDF$label)
+  cat("\nTrain_set - Images by Labels:")
+  table(pca_train_set$label)
+  cat("\nTest_set - Images by Labels:")
+  table(pca_test_set$label)
+```
+
+```{r}
+# # compare number of images by labels
+  pca_x <- data.frame(table(imagePCATrainDF$label))
+  colourCount = length(unique(imagePCATrainDF$label))
+  getPalette = colorRampPalette(brewer.pal(9, "Set2"))
+  pca_x
+  pca_gp_all <- ggplot(pca_x, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_all <- pca_gp_all + ggtitle("Sample Images By Labels ") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_all <- pca_gp_all +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  pca_gp_all
+  
+```
+
+```{r}
+# # compare number of images by labels
+  pca_tn_set <- data.frame(table(pca_train_set$label))
+  colourCount = length(unique(pca_train_set$label))
+  getPalette = colorRampPalette(brewer.pal(5, "Set3"))
+  
+  pca_gp_tnset <- ggplot(pca_tn_set, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_tnset <- pca_gp_tnset + ggtitle("Train Set Imagesby Label") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_tnset <- pca_gp_tnset +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  pca_gp_tnset
+```
+
+```{r}
+# # compare number of images by labels
+  pca_tst_set <- data.frame(table(pca_test_set$label))
+  colourCount = length(unique(pca_test_set$label))
+  getPalette = colorRampPalette(brewer.pal(5, "Set3"))
+  
+  pca_gp_tst_set <- ggplot(pca_tst_set, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_tst_set <- pca_gp_tst_set + ggtitle("Test data images by labels") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_tst_set <- pca_gp_tst_set +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  pca_gp_tst_set
+```
+
+```{r}
+# Section 2: Build and tune decision tree models with PCA
+  # grow tree
+  pca_rtree <- rpart(label~. ,data=pca_train_set, method='class', cp=0,minsplit = 1, maxdepth = 5)
+  #summarize rtree values
+  summary(pca_rtree)
+  plotcp(pca_rtree) # plot cross-validation results
+  printcp(pca_rtree) # plot cross-validation results
+  # Plot tree | lets Plot decision trees
+  rpart.plot(pca_rtree,main="Classification Tree for Images after PCA", extra= 102) # plot decision tree
+  rsq.rpart(pca_rtree) # plot approximate R-squared and relative error for different splits (2 plots)
+```
+
+```{r}
+# Section 3: Prediction | Test Phase
+
+  # cat("\nImages by Labels:")
+  # table(imagePCATrainDF$label)
+  # cat("\nTrain_set - Images by Labels:")
+  # table(pca_train_set$label)
+  # cat("\nTest_set - Images by Labels:")
+  # table(pca_test_set$label)
+  # Section 3: Prediction | Test Phase
+  pca_predict_unseen <- predict(pca_rtree, pca_test_set, type = 'class')
+  # predict_unseen
+  pca_table_test_matrix <- table(pca_test_set$label, pca_predict_unseen)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(pca_table_test_matrix)
+```
+
+```{r}
+# kNN - Training the KNN model
+pca_training_kNN <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+set.seed(3033)
+pca_knn_fit <- train(label ~ ., data = pca_train_set, method = "knn", trControl=pca_training_kNN
+                     , preProcess = c("center", "scale")
+                     , tuneLength = 10)
+pca_knn_fit
+```
+
+```{r}
+#kNN - Prediction
+pca_knn_test_pred <- predict(pca_knn_fit, newdata =pca_test_set)
+View(data.frame(pca_knn_test_pred, pca_test_set$label))
+summary(pca_knn_test_pred)
+```
+
+```{r}
+#SVM - Building the Model | Linear Kernel
+
+pca_svm_model <- svm(label ~ ., data = pca_train_set, kernel= 'linear', cost =100, scale = FALSE
+                     , Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model)
+```
+
+```{r}
+#SVM - Prediction | Linear Kernel
+pca_svmPred <- predict(pca_svm_model, pca_test_set, type = 'prob')
+pca_svmPred <- as.data.frame(pca_svmPred)
+colnames(pca_svmPred) <- 'results'
+
+
+svmResults <- pca_test_set %>% select(label) %>% bind_cols(pca_svmPred) %>% 
+  mutate(real = factor(as.character(str_remove(label, 'V')))
+         , prediction = factor(as.character(str_remove(results, 'V'))))
+
+confusionMatrix(svmResults$real, svmResults$prediction) #54.88%
+```
+
+```{r}
+#SVM - Building the Model | Radial Kernel | cost 10
+pca_svm_model_radial <- svm(label ~ ., data = pca_train_set, kernel= 'radial', cost =100
+                            , scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model_radial)
+
+#SVM - Prediction
+pca_svmPred_radial <- predict(pca_svm_model_radial, pca_test_set, type = 'prob')
+
+#Plot the results
+pca_svmPred_radial <- as.data.frame(pca_svmPred_radial)
+colnames(pca_svmPred_radial) <- 'results'
+svmResults_radial <- pca_test_set %>% select(label) %>% bind_cols(pca_svmPred_radial) %>% mutate(real = factor(as.character(str_remove(label, 'V'))) , prediction = factor(as.character(str_remove(results, 'V'))))
+#Build Confusion matrix
+pca_SVM_radialMatrix <- confusionMatrix(svmResults_radial$real
+                                        , svmResults_radial$prediction) #94.48 %
+pca_SVM_radialMatrix
+pca_SVM_radialMatrix$overall
+```
+
+```{r}
+ #SVM - Building the Model | Ploynomial Kernel | cost 100
+pca_svm_model_poly <- svm(label ~ ., data = pca_train_set, kernel= 'polynomial', cost =100
+                          , scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model_poly)
+
+#SVM - Prediction
+pca_svmPred_poly <- predict(pca_svm_model_poly, pca_test_set, type = 'prob')
+
+summary(pca_svmPred_poly)
+
+#Plot the results
+pca_svmPred_poly <- as.data.frame(pca_svmPred_poly)
+colnames(pca_svmPred_poly) <- 'results'
+svmResults_poly <- pca_test_set %>% select(label) %>% bind_cols(pca_svmPred_poly) %>% mutate(real = factor(as.character(str_remove(label, 'V')))
+                                                                                                 , prediction = factor(as.character(str_remove(results, 'V'))))
+#Build Confusion matrix
+pca_SVM_polyMatrix <- confusionMatrix(svmResults_poly$real, svmResults_poly$prediction) #94.48 %
+pca_SVM_polyMatrix
+pca_SVM_polyMatrix$overall
+```
+
+```{r}
+# Random Forest prediction of PCA data
+  rf_fit <- randomForest(y=pca_train_set$label, x=pca_train_set[2:ncol(pca_train_set)], data=pca_train_set, ntree=100 , keep.forest=FALSE, importance=TRUE)
+  
+  print(rf_fit) # view results
+  importance(rf_fit) # importance of each predictor
+  
+  rf_importance <- data.frame(importance(rf_fit)) # importance of each predictor
+  rf_importance
+```
+
+## Now lets rebuild the models using Binary variables. In this case, Labels 20409 and 83144 seems evenly distributed. Lets, go with these categorical values.
+```{r}
+## Bind rows in a single dataset
+trainImages2DF <- rbind(train_data_20409, train_data_83144)
+dim(trainImages2DF) #[1] 3431  785
+
+#convert label column to factor
+trainImages2DF$label <- as.factor(trainImages2DF$label)
+dim(trainImages2DF)
+str(trainImages2DF)
+
+```
+
+```{r}
+#Principal Component Analysis
+pca_2digits <- PCA(t(select(trainImages2DF,-label)),ncp=30)
+```
+
+
+
+```{r}
+#Prepare dataframe from PCA Output
+trainPCAImages2DF <- data.frame(trainImages2DF$label,pca_2digits$var$coord)
+dim(trainPCAImages2DF) #[1] 3431   31
+
+str(trainPCAImages2DF)
+# head(imagePCATrainDF)
+```
+
+```{r}
+#Rename Columns 
+colnames(trainPCAImages2DF) <- c("label","dim1","dim2","dim3","dim4","dim5","dim6","dim7","dim8","dim9","dim10","dim11","dim12","dim13"
+                                ,"dim14","dim15","dim16","dim17","dim18","dim19","dim20","dim21","dim22","dim23","dim24","dim25"
+                                ,"dim26","dim27","dim28","dim29","dim30")
+str(trainPCAImages2DF)
+dim(trainPCAImages2DF)
+# imagePCATrainDF
+```
+
+```{r}
+# Prepare train and test data from the revised PCA Train dataset.
+  sample_size = floor(0.80*nrow(trainPCAImages2DF)) 
+  # set seed to ensure you always have same random numbers generated #324 has 100% training accuracy 
+  train_index = sample(seq_len(nrow(trainPCAImages2DF)),size = sample_size)
+  # train_index
+  pca_train_set_binary =trainPCAImages2DF[train_index,] #creates the training dataset with row numbers stored in train_index
+  # pca_train_set
+  # # table(train_data$author)
+  pca_test_set_binary=trainPCAImages2DF[-train_index,]  # creates the test dataset excluding the row numbers mentioned in train_index
+  # # table(test_data$author)
+  cat("\nImages by Labels:")
+  table(trainPCAImages2DF$label)
+  cat("\nTrain_set - Images by Labels:")
+  table(pca_train_set_binary$label)
+  cat("\nTest_set - Images by Labels:")
+  table(pca_test_set_binary$label)
+```
+  
+  
+  
+```{r}
+head(trainPCAImages2DF)
+imagePCATrain2DF <- subset(trainPCAImages2DF, select = c(1, 2, 5))
+imagePCATrain2DF
+# # compare number of images by labels
+  pca_2x <- data.frame(table(trainPCAImages2DF$label))
+  colourCount = length(unique(trainPCAImages2DF$label))
+  getPalette = colorRampPalette(brewer.pal(5, "Set2"))
+  pca_2x
+  pca_gp_2x <- ggplot(pca_2x, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_2x <- pca_gp_2x + ggtitle("Sample Images By Labels ") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_2x <- pca_gp_2x +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  pca_gp_2x
+  
+```
+
+```{r}
+# # compare number of images by labels
+  pca_tn_set_binary <- data.frame(table(pca_train_set_binary$label))
+  colourCount = length(unique(pca_train_set_binary$label))
+  getPalette = colorRampPalette(brewer.pal(5, "Set3"))
+  
+  pca_gp_tnset_binary <- ggplot(pca_tn_set_binary, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_tnset_binary <- pca_gp_tnset_binary + ggtitle("Train Set Imagesby Label") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_tnset_binary <- pca_gp_tnset_binary +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  pca_gp_tnset_binary
+```
+
+```{r}
+# # compare number of images by labels
+  pca_tst_set_binary <- data.frame(table(pca_test_set_binary$label))
+  colourCount = length(unique(pca_test_set_binary$label))
+  getPalette = colorRampPalette(brewer.pal(5, "Set3"))
+  
+  pca_gp_tst_set_binary <- ggplot(pca_tst_set_binary, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_tst_set_binary <- pca_gp_tst_set_binary + ggtitle("Test data images by labels") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_tst_set_binary <- pca_gp_tst_set_binary +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text(),panel.background = element_blank())
+  pca_gp_tst_set_binary
+```
+
+```{r}
+# Section 2: Build and tune decision tree models with PCA
+  # grow tree
+  pca_rtree_binary <- rpart(label~. ,data=pca_train_set_binary, method='class', cp=0,minsplit = 1, maxdepth = 5)
+  #summarize rtree values
+  summary(pca_rtree_binary)
+  plotcp(pca_rtree_binary) # plot cross-validation results
+  printcp(pca_rtree_binary) # plot cross-validation results
+  # Plot tree | lets Plot decision trees
+  rpart.plot(pca_rtree_binary,main="Classification Tree for Images after PCA", extra= 102) # plot decision tree
+  rsq.rpart(pca_rtree_binary) # plot approximate R-squared and relative error for different splits (2 plots)
+```
+
+```{r}
+# Section 3: Prediction | Test Phase
+  pca_predict_unseen_binary <- predict(pca_rtree_binary, pca_test_set_binary, type = 'class')
+  # predict_unseen
+  pca_table_test_matrix_binary <- table(pca_test_set_binary$label, pca_predict_unseen_binary)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(pca_table_test_matrix_binary)
+```
+
+```{r}
+# kNN - Training the KNN model
+pca_training_kNN_binary <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+set.seed(3033)
+pca_knn_fit_binary <- train(label ~ ., data = pca_train_set_binary, method = "knn", trControl=pca_training_kNN_binary
+                     , preProcess = c("center", "scale")
+                     , tuneLength = 10)
+pca_knn_fit_binary
+```
+
+```{r}
+#kNN - Prediction
+pca_knn_test_pred_binary <- predict(pca_knn_fit_binary, newdata =pca_test_set_binary)
+View(data.frame(pca_knn_test_pred_binary, pca_test_set_binary$label))
+summary(pca_knn_test_pred_binary)
+```
+
+```{r}
+#SVM - Building the Model | Linear Kernel | Binary Classifier
+
+pca_svm_model_binary <- svm(label ~ ., data = pca_train_set_binary, kernel= 'linear'
+                            , cost =100, scale = FALSE, Probability = TRUE
+                            , Cross = 3,type = 'C')
+summary(pca_svm_model_binary)
+```
+
+```{r}
+#SVM - Prediction | Linear Kernel | Binary Classifier
+pca_svmPred_binary <- predict(pca_svm_model_binary, pca_test_set_binary, type = 'prob')
+pca_svmPred_binary <- as.data.frame(pca_svmPred_binary)
+colnames(pca_svmPred_binary) <- 'results'
+
+
+svmResults_binary <- pca_test_set_binary %>% select(label) %>% bind_cols(pca_svmPred_binary)   %>% mutate(real = factor(as.character(str_remove(label, 'V')))
+         , prediction = factor(as.character(str_remove(results, 'V'))))
+
+confusionMatrix(svmResults_binary$real, svmResults_binary$prediction) #73.71%
+```
+
+```{r}
+#SVM - Building the Model | Radial Kernel | cost 100 | Binary Classifier
+pca_svm_model_radial_binary <- svm(label ~ ., data = pca_train_set_binary, kernel= 'radial', cost =100
+                            , scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model_radial_binary)
+
+#SVM - Prediction
+pca_svmPred_radial_binary <- predict(pca_svm_model_radial_binary, pca_test_set_binary, type = 'prob')
+
+#Plot the results
+pca_svmPred_radial_binary <- as.data.frame(pca_svmPred_radial_binary)
+colnames(pca_svmPred_radial_binary) <- 'results'
+svmResults_radial_binary <- pca_test_set_binary %>% select(label) %>% bind_cols(pca_svmPred_radial_binary) %>% mutate(real = factor(as.character(str_remove(label, 'V'))) , prediction = factor(as.character(str_remove(results, 'V'))))
+#Build Confusion matrix
+pca_SVM_radialMatrix_binary <- confusionMatrix(svmResults_radial_binary$real
+                                        , svmResults_radial_binary$prediction) #76.57%
+pca_SVM_radialMatrix_binary
+pca_SVM_radialMatrix_binary$overall
+```
+
+```{r}
+ #SVM - Building the Model | Ploynomial Kernel | cost 100 | Binary Classifier
+pca_svm_model_poly_binary <- svm(label ~ ., data = pca_train_set_binary, kernel= 'polynomial', cost =100
+                          , scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model_poly_binary)
+
+#SVM - Prediction
+pca_svmPred_poly_binary <- predict(pca_svm_model_poly_binary, pca_test_set_binary, type = 'prob')
+
+summary(pca_svmPred_poly_binary)
+
+#Plot the results
+pca_svmPred_poly_binary <- as.data.frame(pca_svmPred_poly_binary)
+colnames(pca_svmPred_poly_binary) <- 'results'
+svmResults_poly_binary <- pca_test_set_binary %>% select(label) %>% bind_cols(pca_svmPred_poly_binary) %>% mutate(real = factor(as.character(str_remove(label, 'V')))
+                                                                                                 , prediction = factor(as.character(str_remove(results, 'V'))))
+#Build Confusion matrix
+pca_SVM_polyMatrix_binary <- confusionMatrix(svmResults_poly_binary$real, svmResults_poly_binary$prediction) #94.48 %
+pca_SVM_polyMatrix_binary
+pca_SVM_polyMatrix_binary$overall
+```
+
+```{r}
+# Random Forest prediction of PCA data | Binary Classifier
+  rf_fit_binary <- randomForest(y=pca_train_set_binary$label, x=pca_train_set_binary[2:ncol(pca_train_set_binary)], data=pca_train_set_binary, ntree=100 , keep.forest=FALSE, importance=TRUE)
+  
+  print(rf_fit_binary) # view results
+  importance(rf_fit_binary) # importance of each predictor
+  
+  rf_importance_binary <- data.frame(importance(rf_fit_binary)) # importance of each predictor
+  rf_importance_binary
+```
+
+```{r}
+# images_20409 <-list.files(path=image_20409_dir, pattern=".jpg",all.files=T)
+# myImages_20409 = lapply(images_20409, readImage)
+
+# n_files <- length(images_20409)
+# tmpfiles <- .3 * n_files
+# 
+# for (i in 1:tmpfiles) {
+#   myImages_20409[i] = lapply(images_20409[i], readImage)
+# }
+
+# length(myImages_20409)
+#structure of the list
+# str(myImages_20409)
+#image as in 
+# print(myImages[1])
+```
+
+

@@ -1,0 +1,279 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+-----------------------------------------------------------------------------------
+Title: "IST707 HW2"
+Name: Sathish Kumar Rajendiran
+Date: 07/15/2020
+-----------------------------------------------------------------------------------
+Exercise: 
+----------instruction quote begins------------- 
+
+  Here is a small dataset for you to work with.
+  Each of 5 schools (A, B, C, D and E) is implementing the same math course this semester, with 35 lessons. 
+  There are 30 sections total. The semester is about 3/4 of the way through.
+  For each section, we record the number of students who are:
+  • very ahead (more than 5 lessons ahead)
+  • middling (5 lessons ahead to 0 lessons ahead)
+  • behind (1 to 5 lessons behind)
+  • more behind (6 to 10 lessons behind)
+  • very behind (more than 10 lessons behind)
+  • completed (finished with the course)
+  What’s the story (or stories) in this data? Find it, and tell it visually and, above all, truthfully. 
+  
+-----------instruction quote ends-----------------
+# import libraries      
+```{r}
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+EnsurePackage("ggplot2")
+EnsurePackage("reshape2")
+EnsurePackage("sqldf")
+EnsurePackage("hrbrthemes")
+```
+
+```{r}
+# Load Story teller data 
+  filepath <- "/Users/sathishrajendiran/Documents/R/data-storyteller.csv"
+  # function readFiles
+  readFiles <- function(fpath) {
+      dftemp <- data.frame(read.csv(fpath,na.strings=c(""," ","NA")),stringsAsFactors=FALSE)
+      return(dftemp)
+    }
+  story_data <- readFiles(filepath) 
+  
+  dim(story_data) #30 rows  8 columns  
+  
+# Preview the structure 
+  str(story_data)
+
+# Analyze the spread  
+  summary(story_data)
+  
+# Preview top few rows  
+  head(story_data)
+  
+  # View(story_data)
+  table(story_data$School)
+```
+
+
+```{r}
+# Data Exploration:
+
+#1. Rename Columns
+  colnames(story_data) <- c("School","Section","VeryAhead","Middling","Behind","MoreBehind","VeryBehind","Completed")
+  str(story_data)
+  
+#2. Check for missing values
+  #find incomplete records
+  nrow(story_data[!complete.cases(story_data),]) #0
+  
+#3. Find na columns
+  clnames <- colnames(story_data)[colSums(is.na(story_data)) > 0]
+  clnames #0
+
+#4. Duplicate values
+  d <- nrow(story_data[duplicated(story_data),])
+  if (d==0){
+    cat("no duplicates")
+  } else cat("number of duplicates",d)
+  
+#5. Remove unnessary columns
+    story_data <- subset(story_data,select = -VeryAhead)
+    story_data
+```
+
+```{r}
+#histogram
+  hcolor <- c("orange")
+  hfill <- c("steelblue")
+  htitle <- c("Data Spread")
+  theme <-theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  
+  gghist <- ggplot(data=melt(story_data),mapping = aes(x= value)) 
+  gghist+geom_histogram(bins = 20,color=hcolor,fill=hfill,na.rm = TRUE)+facet_wrap(~variable,scales = "free_x")+ ggtitle(htitle) + theme
+ 
+```
+
+
+
+
+```{r}
+# Bar plot | Schools vs Number of Sections
+
+  # head(story_data)
+  ggplot(story_data, aes(y=Section, x=School,fill=School)) + geom_bar(position="dodge", stat="identity") + ylab("Number of Sections") + xlab("School") +guides(fill=FALSE) +ggtitle("Schools vs Number of Sections") + theme
+
+```
+```{r}
+#Aggregate All numerical values by School
+   statusBySchool <- aggregate(cbind(Middling=story_data$Middling,Behind=story_data$Behind
+                      ,MoreBehind=story_data$MoreBehind,VeryBehind=story_data$VeryBehind,Completed=story_data$Completed)                                    ,by=list(School=story_data$School),FUN=sum)
+
+  # pivot the columns
+   melted_School <- melt(statusBySchool,id=c("School"))
+  # melted_School
+  
+  # heatmap - spread of students across various schools by course completion status
+  ggheat <- ggplot(melted_School,aes(x= School,y=variable)) 
+  ggheat <- ggheat+geom_tile(aes(fill=value))+scale_fill_gradient(low="#6D9EC1", high="green") +theme +ylab("") 
+  ggheat <- ggheat+ ggtitle("School vs Course Completion") +labs(fill = "No. of Students")
+  ggheat
+```
+
+```{r}
+# Bar plot | Metrics by School
+
+  # head(story_data)
+  barchart <- ggplot(melted_School, aes(variable, value, fill = School)) + geom_col(position = "dodge")
+  barchart <- barchart + ggtitle("Number of Students vs School vs Course Completion") +ylab("Number of Students")
+  barchart + theme +xlab("") 
+```
+
+
+```{r}
+#SQLDF to Perform further aggregation
+  totStudents <- sqldf("select School
+                        , max(Section) as Section
+                        , sum(Middling+Behind+MoreBehind+VeryBehind+Completed) as Students 
+                        from story_data group by School")
+  totStudents
+```
+
+
+```{r}
+SchoolsbyRating <- sqldf("select School,max(Section) as Section
+                            , sum(Middling) as Middling
+                            , sum(Behind) as Behind
+                            , sum(MoreBehind) as MoreBehind
+                            , sum(VeryBehind) as VeryBehind
+                            , sum(Completed) as Completed
+                            , sum(Middling+Behind+MoreBehind+VeryBehind+Completed) as Students 
+                            from story_data group by School")
+  # Calculate % based on total number of students vs Course Categories
+
+  SchoolsbyRating$PercentCompletion <- ifelse (SchoolsbyRating$Students >0, signif((SchoolsbyRating$Completed/SchoolsbyRating$Students)*100,3),0)
+  SchoolsbyRating$PercentVeryBehind <- ifelse (SchoolsbyRating$Students >0, signif((SchoolsbyRating$VeryBehind/SchoolsbyRating$Students)*100,3),0)
+  SchoolsbyRating$PercentMoreBehind <- ifelse (SchoolsbyRating$Students >0, signif((SchoolsbyRating$MoreBehind/SchoolsbyRating$Students)*100,3),0)
+  SchoolsbyRating$PercentBehind <- ifelse (SchoolsbyRating$Students >0, signif((SchoolsbyRating$Behind/SchoolsbyRating$Students)*100,3),0)
+  SchoolsbyRating$PercentMiddling <- ifelse (SchoolsbyRating$Students >0, signif((SchoolsbyRating$Middling/SchoolsbyRating$Students)*100,3),0)
+  
+  # SchoolsbyRating - New Dataframe for further processing
+  SchoolsbyPercentGrading <- data.frame(SchoolsbyRating$School,SchoolsbyRating$PercentCompletion,SchoolsbyRating$PercentMiddling
+                                        ,SchoolsbyRating$PercentBehind
+                                        ,SchoolsbyRating$PercentMoreBehind,SchoolsbyRating$PercentVeryBehind)
+  
+  #ren-name columns
+  colnames(SchoolsbyPercentGrading) <- c("School","Completed","Middling","Behind","MoreBehind","VeryBehind")
+
+  SchoolsbyPercentGrading
+  
+  # Pivot the columns
+  melted_Grading<- melt(SchoolsbyPercentGrading,id=c("School"))
+  melted_Grading <- subset(melted_Grading,melted_Grading$value>0,)
+
+# head(story_data)
+  ggbarPercent <- ggplot(melted_Grading, aes(School, value, fill = variable)) + geom_col(position = "dodge")+ theme 
+  ggbarPercent <- ggbarPercent + ggtitle("Course Completion by % of Students by School")+labs(fill = "Grading")
+  ggbarPercent +xlab("")+ylab(" % of Students")
+  
+```
+
+
+
+```{r}
+#Aggregate all students by school
+byRating <- sqldf("select School
+                    , sum(Middling) as Middling
+                    , sum(Behind) as Behind
+                    , sum(MoreBehind) as MoreBehind
+                    , sum(VeryBehind) as VeryBehind
+                    , sum(Completed) as Completed
+                    from story_data group by School ")
+
+x_byRating <- melt(byRating,id=c("School"))
+# x_byRating
+students_byRating <- sqldf('select 
+                              variable as Rating
+                            , sum(value) as students 
+                            from x_byRating group by variable')
+
+students_byRating
+# Bar plot | Students by Rating
+
+# Bar chart to compare the number of students by course completion
+  ggbar_s <- ggplot(students_byRating, aes(y=students, x=Rating,fill=Rating)) + 
+      geom_bar(position="dodge", stat="identity") + ylab("Number of Students") + xlab("") +guides(fill=FALSE) 
+  ggbar_s <- ggbar_s +ggtitle("Number of Students vs Completion") + theme
+  ggbar_s
+```
+
+```{r}
+# Create pie charts for each School
+  gpChart <- function(s,ctitle) 
+    {
+      x <- subset(melted_Grading,melted_Grading$School==s & melted_Grading$value>0,)
+      t <- paste(ctitle,s)
+      x_pie <- ggplot(x, aes(x="", y=value, fill=variable))+ geom_bar(width = 1, stat = "identity") + coord_polar("y", start=0)+theme_void()
+      x_pie <- x_pie + geom_text(aes(label = paste0(round(value), "%")), position = position_stack(vjust = 0.5))
+      x_pie <- x_pie + theme(axis.text = element_blank(),axis.ticks = element_blank(),panel.grid  = element_blank(),plot.title = element_text(hjust = 0.5)) 
+      x_pie <- x_pie + ggtitle(t) + labs(fill = "Grading")
+      return(x_pie)
+    }
+  
+  gpChart("A","School Performance")
+  gpChart("B","School Performance")
+  gpChart("C","School Performance")
+  gpChart("D","School Performance")
+  gpChart("E","School Performance")
+  
+```
+
+
+
+
+
+```{r}
+#Pie Chart to Compare All Schools by Course Completion by % of students
+m_pie <- ggplot(melted_Grading, aes(x="", y=value, fill=variable))+ geom_bar(width = 1, stat = "identity") 
+m_pie <- m_pie+ coord_polar(theta="y", start=0)
+m_pie <- m_pie + facet_wrap(~ School)
+m_pie <- m_pie + theme(plot.title = element_text(hjust = 0.5),axis.text = element_blank(),axis.ticks = element_blank(),panel.grid  = element_blank()) 
+m_pie + ggtitle("% of Students across schools by Completion status") +labs(fill = "Grading",x="",y="")
+
+```
+
+```{r}
+# Correlation Analysis
+# 
+SchoolsbyRating
+ 
+  # Create line charts with lm regression smoothing charts for correlation analysis
+  glineChart <- function(d,x1,y1,ctitle) 
+    {
+      x <- d[,which(colnames(d)==x1)]
+      y <- d[,which(colnames(d)==y1)]
+      t <- paste(ctitle,x1,'vs',y1)
+      lchart <- ggplot(SchoolsbyRating,aes(x,y))+geom_point(aes())
+      lchart <- lchart+geom_smooth(method = "lm",color="red") + ggtitle(t) +xlab(x1)+ylab(y1)+ theme
+      return(lchart)
+    }
+
+    glineChart(SchoolsbyRating,"Students","Completed","Correlation Analysis | Number of ")
+    glineChart(SchoolsbyRating,"Students","Behind","Correlation Analysis | Number of ")
+    glineChart(SchoolsbyRating,"Section","Completed","Correlation Analysis | Number of ")
+    glineChart(SchoolsbyRating,"Section","Behind","Correlation Analysis | Number of ")
+
+```
+
+

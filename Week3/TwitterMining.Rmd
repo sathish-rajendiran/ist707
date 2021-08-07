@@ -1,0 +1,112 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+-----------------------------------------------------------------------------------
+Title: "IST707 Week3 - Twitter Mining"
+Name: Sathish Kumar Rajendiran
+Date: 07/18/2020
+-----------------------------------------------------------------------------------
+Exercise: 
+ Twitter Mining
+
+# import libraries      
+```{r}
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+EnsurePackage("twitteR")
+EnsurePackage("tokenizers")
+EnsurePackage("tm")
+EnsurePackage("stopwords")
+EnsurePackage("tidyverse")
+EnsurePackage("arules")
+EnsurePackage("ggplot2")
+cat("Packages are loaded")
+
+```
+
+
+```{r}
+# Change the next four lines based on your own consumer_key, consume_secret, access_token, and access_secret. 
+  consumer_key <- ""
+  consumer_secret <- ""
+  access_token <- ""
+  access_secret <- ""
+```
+
+
+```{r}
+
+# Load Story teller data 
+  filepath <- "/Users/sathishrajendiran/Documents/R/credentials.csv"
+  # function readFiles
+  
+readFiles <- function(fpath) {
+      dftemp <- data.frame(read.csv(fpath,na.strings=c(""," ","NA"),header=TRUE),stringsAsFactors=FALSE)
+      return(dftemp)
+    }
+  
+  credentials <- readFiles(filepath) 
+  
+  credentials
+  
+  consumer_key <- as.character(credentials[credentials$key=="consumer_key",]$value)
+  consumer_secret <- as.character(credentials[credentials$key=="consumer_secret",]$value)
+  access_token <- as.character(credentials[credentials$key=="access_token",]$value)
+  access_secret <- as.character(credentials[credentials$key=="access_secret",]$value)
+
+```
+
+
+```{r}
+#read data from Twitter API
+    setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
+    tw = twitteR::searchTwitter('#H1B', n = 100, since = '2020-07-17', retryOnRateLimit = 2)
+    tw_DF = twitteR::twListToDF(tw)
+```
+
+
+```{r}
+dim(tw_DF)
+View(tw_DF)
+tw_DF[1]
+tweetstoFile <- "/Users/sathishrajendiran/Documents/R/tweets.csv"
+Trans <- file(tweetstoFile)
+## Tokenize to words 
+Tokens<-tokenizers::tokenize_words(tw_DF$text[1],stopwords = stopwords::stopwords("en"), 
+          lowercase = TRUE,  strip_punct = TRUE, strip_numeric = TRUE,simplify = TRUE)
+## Write squished tokens
+cat(unlist(str_squish(Tokens)), "\n", file=Trans, sep=",")
+close(Trans)
+
+```
+
+```{r}
+Trans <- file(tweetstoFile, open = "a")
+for(i in 2:nrow(tw_DF)){
+  Tokens<-tokenize_words(tw_DF$text[i],stopwords = stopwords::stopwords("en"), 
+            lowercase = TRUE,  strip_punct = TRUE, simplify = TRUE)
+  cat(unlist(str_squish(Tokens)), "\n", file=Trans, sep=",")
+}
+close(Trans)
+
+```
+
+```{r}
+TweetTrans <- read.transactions(tweetstoFile,
+                                rm.duplicates = FALSE, 
+                                format = "basket",
+                                sep=","
+                                ## cols = 
+                                )
+inspect(TweetTrans)
+```
+

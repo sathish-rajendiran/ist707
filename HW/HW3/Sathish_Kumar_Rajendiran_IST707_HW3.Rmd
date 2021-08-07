@@ -1,0 +1,315 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+-----------------------------------------------------------------------------------
+Title: "IST707 HW3 Twitter Mining + Association Rules"
+Name: Sathish Kumar Rajendiran
+Date: 07/24/2020
+-----------------------------------------------------------------------------------
+Exercise: Twitter Mining
+----------instruction quote begins------------- 
+
+
+
+-----------instruction quote ends-----------------
+
+# import libraries      
+```{r}
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+EnsurePackage("twitteR")
+EnsurePackage("tokenizers")
+EnsurePackage("stopwords")
+EnsurePackage("tidyverse")
+EnsurePackage("arules")
+
+EnsurePackage("readxl")
+EnsurePackage("ggplot2")
+EnsurePackage("tidytext")
+EnsurePackage("dplyr")
+EnsurePackage("sqldf")
+cat("Packages are loaded")
+```
+
+```{r}
+install.packages("arulesViz")
+library("arulesViz")
+```
+
+```{r}
+# Change the next four lines based on your own consumer_key, consume_secret, access_token, and access_secret. 
+  library("twitteR")
+  filepath <- "/Users/sathishrajendiran/Documents/R/tw_credentials.xls"
+  df_cred <- data.frame(read_excel(filepath),stringsAsFactors=FALSE)
+  str(df_cred)
+  
+  #Assign variables
+  consumer_key <- as.character(df_cred[df_cred$key=="consumer_key",]$value)
+  consumer_secret <- as.character(df_cred[df_cred$key=="consumer_secret",]$value)
+  access_token <- as.character(df_cred[df_cred$key=="access_token",]$value)
+  access_secret <- as.character(df_cred[df_cred$key=="access_secret",]$value)
+
+  #read data from Twitter API - Using direct authentication
+  setup_twitter_oauth(consumer_key, consumer_secret, access_token, access_secret)
+```
+
+```{r}
+  #search twitter on Covid+ Retail topics
+  fn_twitter <- searchTwitter("covid+retail",n=3000,lang="en",since = '2020-05-01', retryOnRateLimit = 2) #resultType="popular"
+  tw_df_covid <- twListToDF(fn_twitter)
+  # tw_df <- twListToDF(fn_twitter)
+  str(tw_df_covid)
+  dim(tw_df_covid)
+```
+
+
+```{r}
+  # View(tw_df_covid)
+  #Analyze Tweet Words
+  tweet_words <- tw_df_covid %>% select(id, text) %>% unnest_tokens(word,text)
+  tweet_words %>% count(word,sort=T) %>% slice(1:20)  %>% 
+  
+  ggplot(aes(x = reorder(word,n, function(n) -n), y = n)) + geom_bar(stat = "identity") + theme(axis.text.x = element_text(angle = 60, 
+      hjust = 1)) + xlab("")
+```
+
+
+```{r}
+# Create a list of stop words: a list of words that are not worth including
+
+  my_stop_words <- stop_words %>% select(-lexicon) %>% bind_rows(data.frame(word = c("https", "t.co", "rt", "amp")))
+  tweet_words_interesting <- tweet_words %>% anti_join(my_stop_words)
+  
+  # Intresting tweet words
+  
+  tweet_words_interesting
+  
+  tweet_words_interesting %>% group_by(word) %>% tally(sort=TRUE) %>% slice(1:25) %>% ggplot(aes(x = reorder(word, 
+    n, function(n) -n), y = n,fill=word)) + geom_bar(position="dodge", stat = "identity") + theme(axis.text.x = element_text(angle = 60, 
+    hjust = 1)) + xlab("")
+
+```
+
+```{r}
+# Sentiment Analysis using nrc lexicon
+
+# The nrc lexicon categorizes words in a binary fashion (“yes”/“no”) into categories of 
+# positive, negative, anger, anticipation, disgust, fear, joy, sadness, surprise, and trust
+
+  nrc_lex <- get_sentiments("nrc")
+  fn_sentiment <- tweet_words_interesting %>% left_join(nrc_lex)
+  # fn_sentiment %>% filter(!is.na(sentiment)) %>% group_by(sentiment) %>% summarise(n=n())
+  fn_sentiment
+  
+  #aggregate by sentiment category
+  bySentiment <- sqldf("select sentiment
+                    , count(*)as n
+                    from fn_sentiment where sentiment <>'NA'
+                    group by sentiment ")
+  bySentiment
+  
+  #bar plot
+  hcolor <- c("orange")
+  hfill <- c("steelblue")
+  # htitle <- c("")
+  
+  theme <-theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  ggbar_s <- ggplot(bySentiment, aes(y=n, x=sentiment,fill=sentiment)) + 
+  geom_bar(position="dodge", stat="identity") + ylab("Number of Words") + xlab("") +guides(fill=FALSE) 
+  ggbar_s <- ggbar_s +ggtitle("Covid/Retail - Sentiment Analysis") + theme
+  ggbar_s
+```
+
+```{r}
+#Tokenize words into file| Write to CSV
+# tw_df_covid$text[1]
+# x <- tweet_words_interesting$word
+x_trans_file <- "/Users/sathishrajendiran/Documents/R/tw_trans.csv"
+x_trans <- file(x_trans_file,open = "w") # Overwrite the file for now
+
+for (i in 1:nrow(tw_df_covid)){
+  Tokens <- tokenize_words(tw_df_covid$text[i],stopwords = c("en","https", "t.co", "rt", "amp","the","of"),lowercase = TRUE,strip_punct = TRUE,strip_numeric = TRUE,simplify = TRUE )
+  cat(unlist(str_squish(Tokens)),"\n",file = x_trans,sep = ",")
+}
+close(x_trans)
+
+Tokens
+```
+
+
+```{r}
+#Data Cleaning
+#1. move all cell values into a data frame
+    x_trans_file_df <- read.csv(x_trans_file,header = FALSE, sep = ",")
+    head(x_trans_file_df)
+    dim(x_trans_file_df)
+    #review the data stype
+    str(x_trans_file_df)
+    summary(x_trans_file_df)
+
+#2. convert all to character
+    x_trans_file_df <- x_trans_file_df %>% mutate_all(as.character)
+    str(x_trans_file_df)
+
+#3. remove stop words
+    x_trans_file_df[x_trans_file_df=="a"] <- ""
+    x_trans_file_df[x_trans_file_df=="b"] <- ""
+    x_trans_file_df[x_trans_file_df=="c"] <- ""
+    x_trans_file_df[x_trans_file_df=="d"] <- ""
+    x_trans_file_df[x_trans_file_df=="e"] <- ""
+    x_trans_file_df[x_trans_file_df=="f"] <- ""
+    x_trans_file_df[x_trans_file_df=="g"] <- ""
+    x_trans_file_df[x_trans_file_df=="h"] <- ""
+    x_trans_file_df[x_trans_file_df=="i"] <- ""
+    x_trans_file_df[x_trans_file_df=="j"] <- ""
+    x_trans_file_df[x_trans_file_df=="k"] <- ""
+    x_trans_file_df[x_trans_file_df=="l"] <- ""
+    x_trans_file_df[x_trans_file_df=="m"] <- ""
+    x_trans_file_df[x_trans_file_df=="n"] <- ""
+    x_trans_file_df[x_trans_file_df=="o"] <- ""
+    x_trans_file_df[x_trans_file_df=="p"] <- ""
+    x_trans_file_df[x_trans_file_df=="q"] <- ""
+    x_trans_file_df[x_trans_file_df=="r"] <- ""
+    x_trans_file_df[x_trans_file_df=="s"] <- ""
+    x_trans_file_df[x_trans_file_df=="t"] <- ""
+    x_trans_file_df[x_trans_file_df=="u"] <- ""
+    x_trans_file_df[x_trans_file_df=="v"] <- ""
+    x_trans_file_df[x_trans_file_df=="w"] <- ""
+    x_trans_file_df[x_trans_file_df=="x"] <- ""
+    x_trans_file_df[x_trans_file_df=="y"] <- ""
+    x_trans_file_df[x_trans_file_df=="z"] <- ""
+
+#4. clean with grepl - every row in each column
+    y_trans_file_df <- NULL
+    for (i in 1:ncol(x_trans_file_df)) {
+      Mylist <- c()
+      Mylist <- c(Mylist,grepl("[[:digit:]]",x_trans_file_df[[i]]))
+      y_trans_file_df <- cbind(y_trans_file_df,Mylist) #True is when a cell has word that contains digits
+    }
+# For all TRUE , replace with ""
+    x_trans_file_df[y_trans_file_df] <- ""
+
+#5. remove duplicates
+    dim(x_trans_file_df) #3005   24
+    # x_trans_file_df <- x_trans_file_df[!duplicated(x_trans_file_df)]
+    
+#6. Write to file
+    updated_file <- "/Users/sathishrajendiran/Documents/R/tw_trans_updated.csv"
+    write.table(x_trans_file_df,file=updated_file,col.names = FALSE,row.names = FALSE, sep = ",")
+    View(updated_file)
+    View(x_trans_file_df)
+
+```
+
+```{r}
+#Association Rule Mining | Move words into transaction | Create Transaction sets
+# detach(package:arules, unload=TRUE)
+# library("arules")
+# library("arulesViz")
+tw_transactions <- read.transactions(updated_file,rm.duplicates = FALSE,format = "basket", sep = "," ,quote = "")
+inspect(tw_transactions)
+View(tw_transactions)
+sample_trans <- sample(tw_transactions,50)
+summary(sample_trans)
+
+tw_transactions
+
+```
+
+
+
+```{r }
+#Association Rule Mining | Move words into transaction | Create Transaction sets
+options(scipen = 999)
+# detach(package:arulesViz, unload=TRUE)
+# detach(package:arules, unload=TRUE)
+# library("arules")
+# library("arulesViz")
+
+# minSupport <- seq(0.001, 0.8, 0.005)
+# totalRules <- c()
+# for(support in minSupport){
+#   rules <- apriori(tw_transactions,
+#                    parameter=list(support=support,confidence=0.8,maxlen=5,target="rules"))
+#   totalRules <- c(totalRules,length(rules))
+# }
+
+# rule2support <- tibble(minSupport,totalRules)
+# rule2support
+# 
+# rule2support %>% 
+#   ggplot(aes(x=minSupport,y=totalRules)) + geom_line() + geom_point() + labs(x="minimum support",y="number of rules") + theme_light()
+
+# Association Rule Mining | Aprori rule creation
+
+rules <- apriori(tw_transactions, parameter = list(supp = 0.0125, conf = 0.8, minlen=3))
+inspect(rules[1:5])
+sorted_rule_conf <- sort(rules,by="confidence", decreasing = TRUE)
+sorted_rule_support <- sort(rules,by="support", decreasing = TRUE)
+# rules
+inspect(sorted_rule_conf[1:100])
+inspect(sorted_rule_support[1:10])
+
+```
+
+```{r}
+#remove reduntant rules
+gi <- generatingItemsets(rules)
+d <- which(duplicated(gi))
+rules <- rules[-d]
+rules
+
+#sort rules based on support, confidence and lift values
+sorted_rule_support <- sort(rules,by="support", decreasing = TRUE)
+sorted_rule_conf <- sort(rules,by="confidence", decreasing = TRUE)
+sorted_rule_lift <- sort(rules,by="lift", decreasing = TRUE)
+
+#inspect top 10 rule set based on support, confidence and lift
+inspect(sorted_rule_lift[1:20])
+inspect(sorted_rule_conf[1:10])
+inspect(sorted_rule_support[1:10])
+```
+
+```{r}
+#plot rules
+install.packages("RColorBrewer")
+install.packages("ggplot2")
+library("RColorBrewer")
+detach(package:arulesViz, unload=TRUE)
+library("arulesViz")
+
+itemFrequencyPlot(tw_transactions,
+   topN=20,
+   col=brewer.pal(8,'Pastel2'),
+   main='Relative Item Frequency Plot',
+   type="relative",
+   ylab="Item Frequency (Relative)")
+
+plot(sorted_rule_support[1:20],method="graph", shading="confidence",engine='interactive')
+plot(sorted_rule_lift[1:20],method="graph", engine="interactive")
+
+plot(sorted_rule_lift[1:20],method="graph", shading="lift",engine = "htmlwidget")
+```
+
+
+```{r}
+#Wrodcloud on the most intresting twitter words
+install.packages("wordcloud")
+library("wordcloud")
+
+tweet_words_interesting <- tweet_words_interesting %>% count(word,sort=T) 
+wordcloud(tweet_words_interesting$word, tweet_words_interesting$n,rot.per = .15
+          ,random.order = FALSE,colors = brewer.pal(10,"Paired"), max.words = 50,scale=c(10,.1) )
+        
+```
+
+

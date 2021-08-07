@@ -1,0 +1,393 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+-----------------------------------------------------------------------------------
+Title: "IST707 2:Data Preparation "
+Name: Sathish Kumar Rajendiran
+Date: 07/11/2020
+-----------------------------------------------------------------------------------
+Exercise: 
+        Text Mining 
+        
+        # Install necessary packages
+
+```{r}
+# import libraries
+EnsurePackage <- function(x){
+  x <- as.character(x)
+  if (!require(x,character.only = TRUE))
+  {
+    install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+    require(x, character.only = TRUE)
+  }
+}
+# usage example, to load the xlsx library for reading excel files...
+
+EnsurePackage("ggplot2")
+EnsurePackage("reshape2")
+
+```
+
+
+```{r}
+# install.packages(pkgs=c("ggplot2","reshape2","ggeasy","dplyr","data.table","RSQLite","sqldf","reshape"),repos = "http://cran.us.r-project.org")
+# 
+# library(ggplot2)
+# library(ggeasy)
+# library(reshape2)
+# library(data.table)
+# library(stats)
+# library(dplyr)
+# library(RSQLite)
+# library(sqldf)
+# library(reshape) 
+# library(tidyverse)
+# library(viridis)
+# library(hrbrthemes)
+
+```
+
+        
+```{r}
+a <- c(150.0,150.4,150.6)
+mean(a)
+signif(mean(a),digits = 4)
+
+mons <- c("Jun","Jan","Feb","Jan","Jul","Mar","Feb","Apr","May","Aug","Oct","Dec","Sep","Jun","Jan","Feb","Jan","Jul","Mar","Feb","Apr","May","Aug","Oct","Dec","Sep","Nov")
+table(mons)
+mons_factor <- factor(mons,levels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"),ordered = TRUE)
+table(mons_factor)
+```
+
+```{r}
+# Load Titanic train data 
+
+fpath_train <- "/Users/sathishrajendiran/Documents/R/Titanic/train.csv"
+
+  # function readFiles
+  readFiles <- function(fpath)
+    {
+    dftemp <- data.frame(read.csv(fpath,na.strings=c(""," ","NA")),stringsAsFactors=FALSE)
+    return(dftemp)
+  }
+  
+  train_data <- readFiles(fpath_train) 
+  
+  dim(train_data)
+  str(train_data)
+  summary(train_data)
+    head(train_data)
+  # View(train_data)
+  
+```
+
+
+```{r}
+# 2. Data Cleaning Process | 2.1 Titanic Training Dataset - Datatype conversion
+ train_data$Survived=factor(train_data$Survived)
+ # str(train_data)
+
+ train_data$Pclass=ordered(train_data$Pclass)
+ # str(train_data)
+ # table(train_data$Pclass)
+ 
+ train_data$PassengerId=factor(train_data$PassengerId)
+ # str(train_data)
+ 
+ train_data$Parch=ordered(train_data$Parch)
+ table(train_data$Parch)
+ 
+str(train_data)
+ 
+```
+```{r}
+# Missing values
+
+    
+  # find complete records
+  train_data[complete.cases(train_data),]
+  nrow(train_data[complete.cases(train_data),]) #183 rows
+  
+   # find incomplete records
+  train_data[!complete.cases(train_data),]
+  nrow(train_data[!complete.cases(train_data),]) #708 rows
+  
+  #find na columns
+  is.na(train_data)
+  clnames <- colnames(train_data)[colSums(is.na(train_data)) > 0]
+  clnames
+  # [1] "Age"      "Cabin"    "Embarked"
+
+  #number of rows having NAs by attributes
+  length(which(is.na(train_data$Age)))  #177
+  length(which(is.na(train_data$Cabin)))  #687
+  length(which(is.na(train_data$Embarked)))  #2
+  
+  #  create subset of dataframe rows having NAs
+  na_train_data <- train_data[rowSums(is.na(train_data)) > 0,]
+  na_train_data # 708- rows
+  
+  
+  # Remove NAs on Age | replace with average age
+  train_data$Age[is.na(train_data$Age)] <- mean(train_data$Age,na.rm = TRUE)
+  length(which(is.na(train_data$Age)))  #0
+```
+```{r}
+
+# Duplicate values
+nrow(train_data) #891
+nrow(train_data[duplicated(train_data),]) #0
+nrow(train_data[!duplicated(train_data),]) #891
+
+```
+```{r}
+# Summary Statistics
+
+  #Numerical Values
+  summary(train_data)
+  str(train_data)
+  var(train_data$Age)
+  median(train_data$Age)
+  
+  #Nominal Values
+  
+  table(train_data$Sex) 
+  table(train_data$Sex)[which.max(table(train_data$Sex))] #577
+  
+  #Ordinal Values
+  table(train_data$Pclass)
+  
+  #   1   2   3 
+  # 216 184 491 
+  
+```
+
+```{r}
+# Data Visualization | histogram
+
+  hist(train_data$Age)
+
+```
+
+
+```{r}
+# Data Visualization | Box Plot
+
+  boxplot(train_data$Age)
+
+# barplot(train_data$Age)
+    hcolor <- c("orange")
+    hfill <- c("steelblue")
+    htitle <- c("Data Spread")
+    theme <-theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  
+   #valdiation of player's age across 
+    ggAgeboxplot <- ggplot(train_data,aes(Age)) +geom_boxplot(fill = "steelblue", colour = "orange",outlier.colour = "red", outlier.shape = 1,na.rm=TRUE)+ggtitle("Age analysis")
+    
+    ggAgeboxplot+theme
+    
+```
+```{r}
+#Age by gender
+boxplot(Age~Sex,
+       data = train_data, main="Age by gender", 
+       ylab="",
+       xlab = "Age",
+       border="orange", 
+       col="steelblue",
+       freq=FALSE,
+       las=1, 
+       breaks=5,
+       horizontal = TRUE,na.rm=TRUE)
+```
+```{r}
+# Data Visualization | Box Plot
+
+  boxplot(train_data$Fare)
+
+# barplot(train_data$Age)
+    hcolor <- c("orange")
+    hfill <- c("steelblue")
+    htitle <- c("Data Spread")
+    theme <-theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  
+   #valdiation of player's age across 
+    ggFareboxplot <- ggplot(train_data,aes(Fare)) +geom_boxplot(fill = "steelblue", colour = "orange",outlier.colour = "red", outlier.shape = 1,na.rm=TRUE)+ggtitle("Fare analysis")
+    
+    ggFareboxplot+theme
+```
+
+
+```{r}
+#Survived by Age
+boxplot(Age~Survived,
+       data = train_data, main="Number of Survivors by Age", 
+       ylab="",
+       xlab = "",
+       border="orange", 
+       col="steelblue",
+       freq=FALSE,
+       las=1, 
+       breaks=5,
+       horizontal = TRUE,na.rm=TRUE)
+```
+
+
+```{r}
+boxplot(train_data$Fare,train_data$Pclass=="3")
+
+
+    
+    
+```
+
+```{r}
+# Data Visualization | Scatter Plot
+
+  plot(train_data$Age,train_data$Fare)
+```
+
+
+```{r}
+# Data Visualization | Cross-Tab
+table(train_data$Sex,train_data$Survived)
+
+
+
+```
+
+
+```{r}
+#Relationship between Nominal and Numeric Value
+male <- train_data[train_data$Sex=="male",] 
+female <- train_data[train_data$Sex=="female",] 
+
+mean(male$Fare) #25.52389
+mean(female$Fare) # 44.47982
+```
+```{r}
+  gghist <- ggplot(data=melt(train_data),mapping = aes(x= value)) 
+  gghist+geom_histogram(bins = 20,color=hcolor,fill=hfill,na.rm = TRUE)+facet_wrap(~variable,scales = "free_x")+ ggtitle(htitle) + theme
+  
+```
+```{r}
+  # subset of titanic training data set containing Pclass==3
+  Pclass3rd <- train_data[train_data$Pclass=="3",] # subset containing Pclass==3
+
+  hcolor <- c("orange")
+  hfill <- c("steelblue")
+  htitle <- c("Data Spread")
+  theme <-theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+
+  # Plot histogram
+  gghistPclass <- ggplot(data=Pclass3rd,mapping = aes(x=Fare)) 
+  gghistPclass+geom_histogram(bins = 20,color=hcolor,fill=hfill,na.rm = TRUE)+ ggtitle("Histogram of Fare analysis | Pclass ==3") + theme 
+  
+```
+
+```{r}
+
+  #box plot
+  ggFareboxplot <- ggplot(Pclass3rd,aes(Fare)) +geom_boxplot(fill = "steelblue", colour = "orange",outlier.colour = "red", outlier.shape = 1,na.rm=TRUE)+ggtitle("Fare analysis | Pclass ==3")
+    
+  ggFareboxplot+theme
+```
+```{r}
+# Data Visualization | Cross-Tab
+table(train_data$Embarked,train_data$Survived)
+
+```
+```{r}
+# Load Sales data 
+  fpath_sales <- "/Users/sathishrajendiran/Documents/R/SalesData.csv"
+
+  # function readFiles
+    readFiles <- function(fpath)
+      {
+      dftemp <- data.frame(read.csv(fpath,na.strings=c(""," ","NA")),stringsAsFactors=FALSE)
+      return(dftemp)
+    }
+  sales_data <- readFiles(fpath_sales) 
+  # dim(sales_data)
+  # str(sales_data)
+  # summary(sales_data)
+  # head(sales_data)
+  # colnames(sales_data)
+  salesByRegion <- aggregate(cbind(Mon=sales_data$Mon,Tue=sales_data$Tue,Wed=sales_data$Wed,Thu=sales_data$Thu,Fri=sales_data$Fri,Sat=sales_data$Sat,Sun=sales_data$Sun)
+                             ,by=list(Group.Region=sales_data$Region),FUN=sum)
+  salesByRegion
+```
+```{r}
+sales_data$InWeekend <- rowSums(sales_data[,c("Sat","Sun")]) 
+sales_data
+
+SalesInWeekend <- aggregate(sales_data$InWeekend,by=list(Region=sales_data$Region),FUN=mean)
+SalesInWeekend
+```
+
+```{r}
+#Aggregate Fare by Sex
+
+TitanicFare <- data.frame(train_data$Sex,train_data$Fare)
+TitanicFarebySex <- aggregate(TitanicFare$train_data.Fare,by=list(Sex=TitanicFare$train_data.Sex),FUN=mean)
+TitanicFarebySex
+
+```
+```{r}
+
+#discretization
+train_data$discAge <- cut(train_data$Age,breaks=c(0,10,20,30,40,50,60,Inf),labels = c("child","teens","twenties","thirties","forties","fifties","old"))
+# str(train_data)
+
+  counts <- table(train_data$discAge,train_data$Survived)
+  
+  df <- data.frame(counts)
+  Survived <- data.frame( Survived = c("Yes", "No"),
+                          Var2 = c(1, 0), 
+                         stringsAsFactors = FALSE)
+  
+  dftitanic <- merge(df, Survived, by = "Var2")
+  colnames(dftitanic) <- c("Var","AgeGroup","Value","IsSurvived")
+  col_order <- c("AgeGroup","IsSurvived","Value","Var")
+  dftitanic <- dftitanic[, col_order]
+  
+  #Bar plot | Survival analysis by Age Group
+  ggplot(dftitanic, aes(fill=IsSurvived, y=Value, x=AgeGroup)) + 
+      geom_bar(position="dodge", stat="identity") + ylab("Number of People") + xlab("") + ggtitle("Survival analysis by Age Group") + theme
+
+#Z-Score
+
+train_data$zScoreAge <- scale(train_data$Age,center = TRUE,scale = TRUE)
+head(train_data$zScoreAge)
+
+#logrithmic plot
+plot(train_data$Age,log(train_data$Age))
+
+#min-max Age
+Age_min_max <- (train_data$Age-min(train_data$Age,na.rm = TRUE))/(max(train_data$Age,na.rm = TRUE))-(min(train_data$Age,na.rm = TRUE))
+Age_min_max
+
+```
+```{r}
+#sampling
+
+#1. Random Sampling
+random_sample <- train_data[sample(1:nrow(train_data),100,replace=TRUE),]
+
+table(train_data$Survived)
+# 0   1 
+# 549 342 
+table(random_sample$Survived)
+# 0  1 
+# 71 29
+
+#2. Systematic Sampling
+sys_sample <- train_data[seq(1,nrow(train_data),9),]  # 99 rows
+
+nrow(sys_sample)
+
+```
+

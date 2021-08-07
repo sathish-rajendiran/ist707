@@ -1,0 +1,1452 @@
+---
+title: Image Retrieval Project:<br>Experiment Two: Deep Learning with Small Sample Set 
+subtitle: IST707 Group Project
+author: Daphne Chang<br>Sathish Kumar Rajendiran<br>Sharat Sripada<br>
+date: "September 11, 2020"
+output: 
+  word_document: 
+    toc: true
+    toc_depth: 3 
+    reference_docx: template.docx 
+editor_options:
+    chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+setwd("~/Dropbox/Data Science/MS Data Science/7.IST707 Data Analytics/final project/final paper")
+
+```
+
+$~$
+
+# Experiment Two: Binary/Multiclass Classifiers Using CNN
+
+To take a different approach from the first experiment, the second experiment started small — building a binary classifier using convolutional neural networks (CNN) — focusing on solving the classification problem for two labels (20409, 126637), which have the largest numbers of images among the four labels. After trial and error with hyperparameter-tuning, three models gave high accuracy results between 97.3% and 97.7%. 
+
+The experiment then expanded to include the whole sample set of four labels (20409, 83144, 113209, 126637). The same architecture for the binary classifier (except for the output layer unit and activation function) was also used to build the multiclass classifier:
+
+- Binary Image Classifier — 2 labels, output layer with 1 unit and sigmoid function
+
+- Multiclass Image Classifier — 4 labels, output layer with 4 units and softmax function.
+
+The three models of the 4-labels classifier reached the accuracy between 89.8% and 93.1%.
+
+The details of the experiment are explained below, starting from sample set selection, data pre-processing, and model analysis, to results summary.
+
+$~$
+
+```{r load-all-libraries}
+
+# Load all libraries needed for this experiment
+library(plyr)
+library(dplyr)
+library(tidyverse)
+library(ggplot2)
+library(RColorBrewer)
+library(stringr)      
+library(Matrix)
+library(imager) 
+library(keras)
+library(tensorflow)
+# Needed for pre-process/image_load or load_img functionality
+library(reticulate)
+#install.packages("tensorflow")
+# install_tensorflow()
+# py_install('pillow')
+# In Mac Terminal: pip install h5py
+
+```
+
+$~$
+
+## Sample Set Selection
+
+To select images for the sample set for the second experience, the training set from the original data set from Kaggle was inspected and explored. The train.csv file provided image IDs with the Landmark ID assigned to each image. A histogram was plotted to visualize the distribution of images by Landmark ID. 
+
+$~$
+
+```{r original-data-inspection}
+
+# Load train.csv
+trainset <- read.csv("train.csv")
+head(trainset)
+
+# Count the number of images by image id
+dim(trainset)
+
+# all images in the original training set
+hist(trainset$landmark_id, main = "Distribution of All Images by Landmark ID", xlab = "Landmark ID")
+
+# Count and Sort landmark IDs by frequency
+landmarkid_freq <- trainset %>% group_by(trainset$landmark_id) %>% tally()
+head(landmarkid_freq[rev(order(landmarkid_freq$n)),], 11)
+
+# The 1st class has way too many images comparing to the other classes.
+## The next four classes have more even distribution of images; 
+## thus better choices as sample data
+# Get a subset of landmark ID 20409
+sample20409 <- trainset[trainset$landmark_id == "20409", ]
+# Get a subset of landmark ID 83144
+sample83144 <- trainset[trainset$landmark_id == "83144", ]
+# Get a subset of landmark ID 113209
+sample113209 <- trainset[trainset$landmark_id == "113209", ]
+# Get a subset of landmark ID 126637
+sample126637 <- trainset[trainset$landmark_id == "126637", ]
+
+# Total number of images in the sample set: 6865
+sample <- rbind(sample20409, sample83144, sample113209, sample126637)
+dim(sample)
+
+```
+
+$~$
+
+Through data exploration, four landmark IDs (labels) from the original Kaggle training data set were found to contain the highest numbers of homogeneous images within each label:
+
+- 20409: 1758 images
+- 83144: 1741 images
+- 113209: 1135 images
+- 126637: 2231 images
+
+The total number of images in the four classes added up to 6865. This formed the sample set for the subsequent second and the third experiments. The images were of various sizes and of various widths and heights.
+
+$~$
+
+```{r inspect-images}
+
+# Inspect images in the sample set
+## Inspect one image
+im1 <- load.image("data2/train/113209/0c9ae07052ee7b00.jpg")
+plot(im1)
+
+## Inspect images labeled with each landmark ID in the sample data set
+folder <- "data2/train/20409"
+files <- Sys.glob(file.path(folder, "*.jpg"))
+par(mfrow=c(3,3))
+for(i in files[500:508]){
+  im <- load.image(i)
+  plot(im)
+}
+
+folder2 <- "data2/train/83144"
+files <- Sys.glob(file.path(folder2, "*.jpg"))
+par(mfrow=c(3,3))
+for(i in files[700:708]){
+  im <- load.image(i)
+  plot(im)
+}
+
+folder3 <- "data2/train/113209"
+files <- Sys.glob(file.path(folder3, "*.jpg"))
+par(mfrow=c(3,3))
+for(i in files[500:508]){
+  im <- load.image(i)
+  plot(im)
+}
+
+folder4 <- "data2/train/126637"
+files <- Sys.glob(file.path(folder4, "*.jpg"))
+par(mfrow=c(3,3))
+for(i in files[500:508]){
+  im <- load.image(i)
+  plot(im)
+}
+
+dev.off()
+
+```
+
+$~$
+
+## The Binary Classifier
+
+### Data Pre-processing
+
+The images in classes 20409 and 126637 were used as the sample set for the binary classifier.
+
+For each class, images were split into the training set (50%), the validation set (25%), and the test set (25%). The same proportion of the split for each class ensured that the training set, validation set, and test set had the same distribution of images as compared with the whole sample data set.
+
+- Training images in class 20409: 879 
+- Validation images in class 20409: 440 
+- Testing images in class 20409: 439
+
+- Training images in class 126637: 1115 
+- Validation images in class 126637: 558 
+- Testing images in class 126637: 558 
+
+To enable the loading of the images from a folder into the network, the image files had to be saved into a folder structure with individual subfolders for training images, validation images, and testing images respectively; within each subfolder were two subfolders, each containing images for a class.
+
+$~$
+
+```{r setting-up-data-directories}
+
+# Set up data directory structure for the binary classifier
+# Comment out dir.create() after the directories are created
+original_dataset_dir <- "~/Downloads/train"
+base_dir <- "data"
+#dir.create(base_dir)
+train_dir <- file.path(base_dir, "train")
+#dir.create(train_dir)
+validation_dir <- file.path(base_dir, "validation")
+#dir.create(validation_dir)
+test_dir <- file.path(base_dir, "test")
+#dir.create(test_dir)
+
+train_20409_dir <- file.path(train_dir, "20409")
+#dir.create(train_20409_dir)
+train_126637_dir <- file.path(train_dir, "126637")
+#dir.create(train_126637_dir)
+
+validation_20409_dir <- file.path(validation_dir, "20409")
+#dir.create(validation_20409_dir)
+validation_126637_dir <- file.path(validation_dir, "126637")
+#dir.create(validation_126637_dir)
+
+test_20409_dir <- file.path(test_dir, "20409")
+#dir.create(test_20409_dir)
+test_126637_dir <- file.path(test_dir, "126637")
+#dir.create(test_126637_dir)
+
+# Load image indexes
+df_20409 <- read.csv("train_20409.csv")
+head(df_20409)
+df_126637 <- read.csv("train_126637.csv")
+head(df_126637)
+
+# For each class, split data to training set 50%, testing set 25%, validation set 25%
+set.seed(100)
+percent <- .50
+
+# Class 20409
+split_20409 <- sample(nrow(df_20409),nrow(df_20409)*percent) 
+trainImg_20409 <- df_20409[split_20409,]
+other_20409 <- df_20409[-split_20409,]
+split2_20409 <- sample(nrow(other_20409),nrow(other_20409)*percent) 
+testImg_20409 <- other_20409[split2_20409,]
+valImg_20409 <- other_20409[-split2_20409,]
+dim(trainImg_20409)
+dim(testImg_20409)
+dim(valImg_20409)
+
+# Class 126637
+split_126637 <- sample(nrow(df_126637),nrow(df_126637)*percent) 
+trainImg_126637 <- df_126637[split_126637,]
+other_126637 <- df_126637[-split_126637,]
+split2_126637 <- sample(nrow(other_126637),nrow(other_126637)*percent) 
+testImg_126637 <- other_126637[split2_126637,]
+valImg_126637 <- other_126637[-split2_126637,]
+dim(trainImg_126637)
+dim(testImg_126637)
+dim(valImg_126637)
+
+# Locate 20409 train images
+loc_train20409_1 <- substr(trainImg_20409$id, 1, 1) 
+loc_train20409_2 <- substr(trainImg_20409$id, 2, 2)
+loc_train20409_3 <- substr(trainImg_20409$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_train20409_1,"/",loc_train20409_2,"/",loc_train20409_3)
+# Copy 20409 images to train folder (comment out file.copy() after images are copied into the directory)
+trainf20409 <- paste0(trainImg_20409$id, ".jpg")
+#file.copy(file.path(original_dataset_path, trainf20409), file.path(train_20409_dir))
+# Locate 20409 test images
+loc_test20409_1 <- substr(testImg_20409$id, 1, 1) 
+loc_test20409_2 <- substr(testImg_20409$id, 2, 2)
+loc_test20409_3 <- substr(testImg_20409$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_test20409_1,"/",loc_test20409_2,"/",loc_test20409_3)
+# Copy 20409 images to test folder
+# Comment out file.copy() after images are copied into the directory
+testf20409 <- paste0(testImg_20409$id, ".jpg")
+#file.copy(file.path(original_dataset_path, testf20409), file.path(test_20409_dir))
+# Locate 20409 validation images
+loc_val20409_1 <- substr(valImg_20409$id, 1, 1) 
+loc_val20409_2 <- substr(valImg_20409$id, 2, 2)
+loc_val20409_3 <- substr(valImg_20409$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_val20409_1,"/",loc_val20409_2,"/",loc_val20409_3)
+# Copy 20409 images to validation folder 
+# Comment out file.copy() after images are copied into the directory
+valf20409 <- paste0(valImg_20409$id, ".jpg")
+#file.copy(file.path(original_dataset_path, valf20409), file.path(validation_20409_dir))
+
+# Locate 126637 train images
+loc_train126637_1 <- substr(trainImg_126637$id, 1, 1) 
+loc_train126637_2 <- substr(trainImg_126637$id, 2, 2)
+loc_train126637_3 <- substr(trainImg_126637$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_train126637_1,"/",loc_train126637_2,"/",loc_train126637_3)
+# Copy 126637 images to train folder
+# Comment out file.copy() after images are copied into the directory
+trainf126637 <- paste0(trainImg_126637$id, ".jpg")
+#file.copy(file.path(original_dataset_path, trainf126637), file.path(train_126637_dir))
+# Locate 126637 test images
+loc_test126637_1 <- substr(testImg_126637$id, 1, 1) 
+loc_test126637_2 <- substr(testImg_126637$id, 2, 2)
+loc_test126637_3 <- substr(testImg_126637$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_test126637_1,"/",loc_test126637_2,"/",loc_test126637_3)
+# Copy 126637 images to test folder
+# Comment out file.copy() after images are copied into the directory
+testf126637 <- paste0(testImg_126637$id, ".jpg")
+#file.copy(file.path(original_dataset_path, testf126637), file.path(test_126637_dir))
+# Locate 126637 validation images
+# Locate 126637 val images
+loc_val126637_1 <- substr(valImg_126637$id, 1, 1) 
+loc_val126637_2 <- substr(valImg_126637$id, 2, 2)
+loc_val126637_3 <- substr(valImg_126637$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_val126637_1,"/",loc_val126637_2,"/",loc_val126637_3)
+# Copy 126637 images to validation folder
+# Comment out file.copy() after images are copied into the directory
+valf126637 <- paste0(valImg_126637$id, ".jpg")
+#file.copy(file.path(original_dataset_path, valf126637), file.path(validation_126637_dir))
+
+```
+
+$~$
+
+Display the counts of training images, validation images, and testing images for each class.
+
+$~$
+
+```{r sample-counts}
+
+cat("Training images for landmark ID 20409:", length(list.files(train_20409_dir)), "\n")
+cat("Training images for landmark ID 126637:", length(list.files(train_126637_dir)), "\n")
+
+cat("Validation images for landmark ID 20409:", length(list.files(validation_20409_dir)), "\n")
+cat("Validation images for landmark ID 126637:", length(list.files(validation_126637_dir)), "\n")
+
+cat("Toesting images for landmark ID 20409:", length(list.files(test_20409_dir)), "\n")
+cat("Testing images for landmark ID 126637:", length(list.files(test_126637_dir)), "\n")
+
+```
+
+$~$
+
+Read images from directories, convert them into batches of pre-processed floating-point tensors. 
+
+$~$
+
+```{r read-images-from-directories}
+
+# Re-scale images by 1/255
+train_datagen <- image_data_generator(rescale = 1/255)
+validation_datagen <- image_data_generator(rescale = 1/255)
+test_datagen <- image_data_generator(rescale = 1/255) 
+
+train_generator <- flow_images_from_directory(  
+  train_dir,                    # Load images from the train folder
+  train_datagen,                # Training data generator
+  target_size = c(150, 150),    # Resize images to 150 × 150
+  batch_size = 20,                                            
+  class_mode = "binary"
+)
+
+validation_generator <- flow_images_from_directory(
+  validation_dir,
+  validation_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary"
+)
+
+test_generator <- flow_images_from_directory(
+  test_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary",
+  seed = 100
+)
+
+```
+ 
+$~$
+ 
+```{r generator-output}
+
+batch <- generator_next(train_generator)
+str(batch)
+
+```
+
+The training data generator output batches of 150 × 150 RGB images (shape (20, 150, 150, 3)) and binary labels (shape (20)), 20 images in each batch. 
+
+The data were then ready to be fed into the network.
+
+$~$
+
+### Binary Classifier: Model One: the Base Model
+
+Convolutional neural networks (CNN) is a type of deep-learning model, which dominates in computer vision applications and is widely used for image classification tasks. A CNN comprises of convolution layers, pooling layers, and fully connected layers. It adaptively learns spatial hierarchies of features through a backpropagation algorithm, using gradient descent. In this experiment, the Keras Library was used to build the CNN models with the TensorFlow backend. Keras provides high-level building blocks for building deep-learning models and enables rapid prototyping with minimal lines of code.
+
+In the first CNN model, the network architecture contained a linear stack of 11 layers, including 4 alternated convolution layers (with relu activation) to augment the network capacity. Each was followed by a pooling layer to downsample feature maps to reduce feature-map coefficients processing and induce spatial-filter hierarchies. As the depth of the feature maps increased from 32 to 128, the size of the feature maps decreased from 148 × 148 to 7 × 7. After these 8 intermediate layers was a flattened layer and two dense layers (i.e. fully connected layers). For the binary classification problem, the output layer (the 2nd dense layer) had a single unit, with the sigmoid activation. The unit produced the probability of one class or the other. 
+
+$~$
+
+```{r build-cnn}
+
+tensorflow::tf$random$set_seed(100)
+
+cnn <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dense(units = 512, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+summary(cnn)
+
+```
+
+$~$
+
+#### Compiling Model One
+
+To configure the learning process, the RMSProp optimizer with the learning rate of 0.0001 was used in the compilation step and `binary_crossentropy` was used as the loss function. "Accuracy" was used as the metrics, which calculated how often predictions equal labels.
+
+$~$
+
+```{r compile-cnn}
+
+cnn %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-4),
+  metrics = c("acc")
+)
+
+```
+
+$~$
+
+#### Training Model One
+
+Using `fit_generator()`, the model was trained and validated through 30 epochs. An epoch is an iteration of passing all the training and validation data forward and backward through the neural network. 
+
+The trained model was saved after training.
+
+$~$
+
+```{r fit-cnn}
+
+history <- cnn %>% fit_generator(
+  train_generator,
+  steps_per_epoch = 100,
+  epochs = 30,
+  validation_data = validation_generator,
+  validation_steps = 50
+)
+
+# Save the model
+save_model_hdf5(cnn, "models/cnn.h5")
+
+```
+
+$~$
+
+The plot showed the loss and accuracy of the model during training and validation through 30 epochs. It was clear from the plot that after 5 epochs the validation loss gradually pulls further above the training loss, and the training accuracy further above the validation accuracy. This was a sign of overfitting. It may have been caused by the small training sample data set (1994 images in 2 classes). 
+
+$~$
+
+```{r plot-cnn}
+
+# Plot the loss and accuracy of the model during training
+plot(history)
+
+```
+
+$~$
+
+```{r evaluate-cnn}
+
+# Reload saved model
+#cnn <- load_model_hdf5("models/cnn.h5")
+
+# Evaluate the model
+cnn %>% evaluate_generator(test_generator, steps = 50)
+
+```
+
+$~$
+
+Even though the model was overfitted, the test accuracy still reached approximately 97.6%.
+
+### Binary Classifier: Model Two: Adding Data Augmentation & Dropout
+
+Based on the same architecture, the second model added data augmentation and dropout to resolve the overfitting issue.
+
+**Adding Data Augmentation**
+
+Overfitting is caused by not having enough training samples from which the model can learn. Therefore, the model is not able to generalize to new data. One way to help resolve the overfitting problem is to use the Data Augmentation strategy to increase the diversity of the existing sample data during training. It does a number of random transformations on the sample images so, at training time, the model is exposed to more aspects of the data; thus the model can generalize better. 
+
+Common data augmentation techniques include:
+1. Random rotation between 0-180 degrees
+2. Random shifting of width and height of images
+3. Random zooming inside images
+4. Random horizontal ﬂipping
+
+`image_data_generator()` is used to random transformations are performed on the images. Below is an example of the resulted images after data augmentation techniques are performed. 
+
+$~$
+
+```{r data-augmentation}
+
+# Configure random transformations
+datagen <- image_data_generator(
+  rescale = 1/255,
+  rotation_range = 40,
+  width_shift_range = 0.2,
+  height_shift_range = 0.2,
+  shear_range = 0.2,
+  zoom_range = 0.2,
+  horizontal_flip = TRUE,
+  fill_mode = "nearest"
+)
+
+# Chooses an image to augment
+fnames <- list.files(train_126637_dir, full.names = TRUE)
+img_path <- fnames[[123]]                                       
+
+# Resize the image
+img <- image_load(img_path, target_size = c(150, 150))
+
+# Converts it to an array
+img_array <- image_to_array(img)                                
+img_array <- array_reshape(img_array, c(1, 150, 150, 3))        
+
+augmentation_generator <- flow_images_from_data(
+  img_array,                                                   
+  generator = datagen,                                                
+  batch_size = 1
+)
+
+# Plots the result
+op <- par(mfrow = c(2, 2), pty = "s", mar = c(1, 0, 1, 0))      
+for (i in 1:4) {                                                     
+  batch <- generator_next(augmentation_generator)                     
+  plot(as.raster(batch[1,,,]))                                        
+} 
+
+par(op) 
+
+```
+
+$~$
+
+**Adding Dropout**
+
+Data augmentation made the inputs more intercorrelated, because they included a large number of variations of the same images from the original small sample data set. Thus, it may not be enough to resolve the overfitting issue. In order to reduce intercorrelation, a dropout layer was added to the model after the flattened layer. "Dropout" is a regulation technique, which randomly selects neurons to ignore. The rate of the dropout was set as 50% in this model. 
+
+$~$
+ 
+```{r cnn2}
+
+tensorflow::tf$random$set_seed(100)
+
+cnn2 <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 512, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+cnn2 %>% compile(
+  loss = "binary_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-4),
+  metrics = c("acc")
+)
+
+datagen <- image_data_generator(  # For augmentation of the training data
+  rescale = 1/255,
+  rotation_range = 40,
+  width_shift_range = 0.2,
+  height_shift_range = 0.2,
+  shear_range = 0.2,
+  zoom_range = 0.2,
+  horizontal_flip = TRUE
+)
+
+test_datagen <- image_data_generator(rescale = 1/255)  # Do not augment validation data
+
+train_generator <- flow_images_from_directory(          
+  train_dir,                                           
+  datagen,                                              
+  target_size = c(150, 150),                          
+  batch_size = 20,
+  class_mode = "binary"
+)
+
+validation_generator <- flow_images_from_directory(
+  validation_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary"
+)
+
+history2 <- cnn2 %>% fit_generator(
+  train_generator,
+  steps_per_epoch = 100,
+  epochs = 30,
+  validation_data = validation_generator,
+  validation_steps = 50
+)
+
+# Save the model
+save_model_hdf5(cnn2, "models/cnn2.h5")
+
+# Plot the loss and accuracy of the model during training
+plot(history2)
+
+# Reload saved model
+#cnn2 <- load_model_hdf5("models/cnn2.h5")
+
+test_generator <- flow_images_from_directory(
+  test_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary",
+  seed = 100
+)
+
+# Evaluate the model
+cnn2 %>% evaluate_generator(test_generator, steps = 50)
+
+```
+ 
+$~$
+
+The use of data augmentation and dropout techniques have mostly resolved the overfitting issue. The loss and accuracy plot showed that both training loss and validation loss gradually went down and converged near epoch 30. The accuracy for both gradually increased and converged after epoch 24; however, the validation accuracy rose very slightly above the training accuracy at epoch 30. It could have been caused by the dropout rate (50%) being a bit high. Further testing could be done with lower dropout rates.
+ 
+The test accuracy was high, approximately 97.7%, but it was only about 0.1% higher than the first model. It was a bit surprising that the overfitted model had similar high accuracy as the better-fitted model.
+ 
+### Model Three: Using RMSProp's Adaptive Learning Rate 
+
+The learning rate is a hyperparameter controlling how big the step is taken in gradient descent. In the first two models, RMSProp was used with a very low learning rate (0.0001) to be cautious, preventing overshooting in gradient descent. To test the impact of the low learning rate, in the third model the RMSProp optimizer was used without manually setting the learning rate. In Keras, the default learning rate for RMSProp is 0.001. As one of the adaptive learning rate methods, RMSProp maintains and adapts learning rates for each of the weights in the model. 
+
+$~$
+
+```{r tune-learning-rate}
+
+tensorflow::tf$random$set_seed(100)
+
+cnn3 <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 512, activation = "relu") %>%
+  layer_dense(units = 1, activation = "sigmoid")
+
+cnn3 %>% compile(
+  loss = "binary_crossentropy",
+  #optimizer = optimizer_rmsprop(lr = 1e-3),
+  optimizer = "rmsprop",
+  metrics = c("accuracy")
+)
+
+datagen <- image_data_generator(
+  rescale = 1/255,
+  rotation_range = 40,
+  width_shift_range = 0.2,
+  height_shift_range = 0.2,
+  shear_range = 0.2,
+  zoom_range = 0.2,
+  horizontal_flip = TRUE
+)
+
+test_datagen <- image_data_generator(rescale = 1/255)
+
+train_generator <- flow_images_from_directory(          
+  train_dir,                                           
+  datagen,                                             
+  target_size = c(150, 150),                           
+  batch_size = 20,
+  class_mode = "binary"
+)
+
+validation_generator <- flow_images_from_directory(
+  validation_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary"
+)
+
+history3 <- cnn3 %>% fit_generator(
+  train_generator,
+  steps_per_epoch = 100,
+  epochs = 30,
+  validation_data = validation_generator,
+  validation_steps = 50
+)
+
+# Save the model
+save_model_hdf5(cnn3, "models/cnn3.h5")
+
+# Plot the loss and accuracy of the model during training
+plot(history3)
+
+# Reload saved model
+#cnn3 <- load_model_hdf5("models/cnn3.h5")
+
+test_generator <- flow_images_from_directory(
+  test_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "binary",
+  seed = 100
+)
+
+# Evaluate the model
+cnn3 %>% evaluate_generator(test_generator, steps = 50)
+
+```
+
+$~$
+
+Using the default RMSProp's adaptive learning rate (instead of the manually set low learning rate) in the third model lowered the test accuracy of the model from approximately 97.7% to 97.3%. It showed that manually tuning the learning rate hyperparameter could help improve accuracy, even though the improvement was very small in this case. 
+
+## Multiclass Classifier
+
+### Data Pre-processing
+
+The sample set included four labels (20409, 83144, 113209, 126637). The same architecture for the binary classifier (except for the 4 units for output layer and softmax activation function) was used to build the multiclass classifier.
+
+For each class, images were split into the training set (50%), the validation set (25%), and the test set (25%). The same proportion of the split for each class ensured that the training set, validation set, and test set had the same distribution of images as compared with the whole sample data set.
+
+- Training images in class 20409: 879 
+- Validation images in class 20409: 440 
+- Testing images in class 20409: 439
+
+- Training images in class 83144: 870 
+- Validation images in class 83144: 436
+- Testing images in class 83144: 435
+
+- Training images in class 113209: 567  
+- Validation images in class 113209: 284 
+- Testing images in class 113209: 284
+
+- Training images in class 126637: 1115 
+- Validation images in class 126637: 558 
+- Testing images in class 126637: 558 
+
+
+The image files were saved into a folder structure separated from the folder structure used for the binary classifier. The base folder included individual subfolders for training images, validation images, and testing images respectively; within each subfolder were four subfolders, each containing images for a class.
+
+$~$
+
+```{r setting-up-data2-directories}
+
+# Set up data directory structure
+# Comment out dir.create() after the directories are created
+original_dataset_dir <- "~/Downloads/train"
+base_dir <- "data2"
+#dir.create(base_dir)
+train_dir <- file.path(base_dir, "train")
+#dir.create(train_dir)
+validation_dir <- file.path(base_dir, "validation")
+#dir.create(validation_dir)
+test_dir <- file.path(base_dir, "test")
+#dir.create(test_dir)
+
+train_20409_dir <- file.path(train_dir, "20409")
+#dir.create(train_20409_dir)
+train_126637_dir <- file.path(train_dir, "126637")
+#dir.create(train_126637_dir)
+
+validation_20409_dir <- file.path(validation_dir, "20409")
+#dir.create(validation_20409_dir)
+validation_126637_dir <- file.path(validation_dir, "126637")
+#dir.create(validation_126637_dir)
+
+test_20409_dir <- file.path(test_dir, "20409")
+#dir.create(test_20409_dir)
+test_126637_dir <- file.path(test_dir, "126637")
+#dir.create(test_126637_dir)
+
+train_83144_dir <- file.path(train_dir, "83144")
+#dir.create(train_83144_dir)
+train_113209_dir <- file.path(train_dir, "113209")
+#dir.create(train_113209_dir)
+
+validation_83144_dir <- file.path(validation_dir, "83144")
+#dir.create(validation_83144_dir)
+validation_113209_dir <- file.path(validation_dir, "113209")
+#dir.create(validation_113209_dir)
+
+test_83144_dir <- file.path(test_dir, "83144")
+#dir.create(test_83144_dir)
+test_113209_dir <- file.path(test_dir, "113209")
+#dir.create(test_113209_dir)
+
+# Load image indexes
+df_20409 <- read.csv("train_20409.csv")
+head(df_20409)
+df_83144 <- read.csv("train_83144.csv")
+head(df_83144)
+df_113209 <- read.csv("train_113209.csv")
+head(df_113209)
+df_126637 <- read.csv("train_126637.csv")
+head(df_126637)
+
+# For each class, split data to training set 50%, testing set 25%, validation set 25%
+set.seed(100)
+percent <- .50
+
+# Class 20409
+split_20409 <- sample(nrow(df_20409),nrow(df_20409)*percent) 
+trainImg_20409 <- df_20409[split_20409,]
+other_20409 <- df_20409[-split_20409,]
+split2_20409 <- sample(nrow(other_20409),nrow(other_20409)*percent) 
+testImg_20409 <- other_20409[split2_20409,]
+valImg_20409 <- other_20409[-split2_20409,]
+dim(trainImg_20409)
+dim(testImg_20409)
+dim(valImg_20409)
+
+# Class 83144
+split_83144 <- sample(nrow(df_83144),nrow(df_83144)*percent) 
+trainImg_83144 <- df_83144[split_83144,]
+other_83144 <- df_83144[-split_83144,]
+split2_83144 <- sample(nrow(other_83144),nrow(other_83144)*percent) 
+testImg_83144 <- other_83144[split2_83144,]
+valImg_83144 <- other_83144[-split2_83144,]
+dim(trainImg_83144)
+dim(testImg_83144)
+dim(valImg_83144)
+
+# Class 113209
+split_113209 <- sample(nrow(df_113209),nrow(df_113209)*percent) 
+trainImg_113209 <- df_113209[split_113209,]
+other_113209 <- df_113209[-split_113209,]
+split2_113209 <- sample(nrow(other_113209),nrow(other_113209)*percent) 
+testImg_113209 <- other_113209[split2_113209,]
+valImg_113209 <- other_113209[-split2_113209,]
+dim(trainImg_113209)
+dim(testImg_113209)
+dim(valImg_113209)
+
+# Class 126637
+split_126637 <- sample(nrow(df_126637),nrow(df_126637)*percent) 
+trainImg_126637 <- df_126637[split_126637,]
+other_126637 <- df_126637[-split_126637,]
+split2_126637 <- sample(nrow(other_126637),nrow(other_126637)*percent) 
+testImg_126637 <- other_126637[split2_126637,]
+valImg_126637 <- other_126637[-split2_126637,]
+dim(trainImg_126637)
+dim(testImg_126637)
+dim(valImg_126637)
+
+# Locate 20409 train images
+loc_train20409_1 <- substr(trainImg_20409$id, 1, 1) 
+loc_train20409_2 <- substr(trainImg_20409$id, 2, 2)
+loc_train20409_3 <- substr(trainImg_20409$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_train20409_1,"/",loc_train20409_2,"/",loc_train20409_3)
+# Copy 20409 images to train folder (comment out file.copy() after images are copied into the directory)
+trainf20409 <- paste0(trainImg_20409$id, ".jpg")
+#file.copy(file.path(original_dataset_path, trainf20409), file.path(train_20409_dir))
+# Locate 20409 test images
+loc_test20409_1 <- substr(testImg_20409$id, 1, 1) 
+loc_test20409_2 <- substr(testImg_20409$id, 2, 2)
+loc_test20409_3 <- substr(testImg_20409$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_test20409_1,"/",loc_test20409_2,"/",loc_test20409_3)
+# Copy 20409 images to test folder
+# Comment out file.copy() after images are copied into the directory
+testf20409 <- paste0(testImg_20409$id, ".jpg")
+#file.copy(file.path(original_dataset_path, testf20409), file.path(test_20409_dir))
+# Locate 20409 validation images
+loc_val20409_1 <- substr(valImg_20409$id, 1, 1) 
+loc_val20409_2 <- substr(valImg_20409$id, 2, 2)
+loc_val20409_3 <- substr(valImg_20409$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_val20409_1,"/",loc_val20409_2,"/",loc_val20409_3)
+# Copy 20409 images to validation folder 
+# Comment out file.copy() after images are copied into the directory
+valf20409 <- paste0(valImg_20409$id, ".jpg")
+#file.copy(file.path(original_dataset_path, valf20409), file.path(validation_20409_dir))
+
+# Locate 83144 train images
+loc_train83144_1 <- substr(trainImg_83144$id, 1, 1) 
+loc_train83144_2 <- substr(trainImg_83144$id, 2, 2)
+loc_train83144_3 <- substr(trainImg_83144$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_train83144_1,"/",loc_train83144_2,"/",loc_train83144_3)
+# Copy 83144 images to train folder (comment out file.copy() after images are copied into the directory)
+trainf83144 <- paste0(trainImg_83144$id, ".jpg")
+#file.copy(file.path(original_dataset_path, trainf83144), file.path(train_83144_dir))
+# Locate 83144 test images
+loc_test83144_1 <- substr(testImg_83144$id, 1, 1) 
+loc_test83144_2 <- substr(testImg_83144$id, 2, 2)
+loc_test83144_3 <- substr(testImg_83144$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_test83144_1,"/",loc_test83144_2,"/",loc_test83144_3)
+# Copy 83144 images to test folder
+# Comment out file.copy() after images are copied into the directory
+testf83144 <- paste0(testImg_83144$id, ".jpg")
+#file.copy(file.path(original_dataset_path, testf83144), file.path(test_83144_dir))
+# Locate 83144 validation images
+loc_val83144_1 <- substr(valImg_83144$id, 1, 1) 
+loc_val83144_2 <- substr(valImg_83144$id, 2, 2)
+loc_val83144_3 <- substr(valImg_83144$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_val83144_1,"/",loc_val83144_2,"/",loc_val83144_3)
+# Copy 83144 images to validation folder 
+# Comment out file.copy() after images are copied into the directory
+valf83144 <- paste0(valImg_83144$id, ".jpg")
+#file.copy(file.path(original_dataset_path, valf83144), file.path(validation_83144_dir))
+
+# Locate 113209 train images
+loc_train113209_1 <- substr(trainImg_113209$id, 1, 1) 
+loc_train113209_2 <- substr(trainImg_113209$id, 2, 2)
+loc_train113209_3 <- substr(trainImg_113209$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_train113209_1,"/",loc_train113209_2,"/",loc_train113209_3)
+# Copy 113209 images to train folder
+# Comment out file.copy() after images are copied into the directory
+trainf113209 <- paste0(trainImg_113209$id, ".jpg")
+#file.copy(file.path(original_dataset_path, trainf113209), file.path(train_113209_dir))
+# Locate 113209 test images
+loc_test113209_1 <- substr(testImg_113209$id, 1, 1) 
+loc_test113209_2 <- substr(testImg_113209$id, 2, 2)
+loc_test113209_3 <- substr(testImg_113209$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_test113209_1,"/",loc_test113209_2,"/",loc_test113209_3)
+# Copy 113209 images to test folder
+# Comment out file.copy() after images are copied into the directory
+testf113209 <- paste0(testImg_113209$id, ".jpg")
+#file.copy(file.path(original_dataset_path, testf113209), file.path(test_113209_dir))
+# Locate 113209 validation images
+# Locate 113209 val images
+loc_val113209_1 <- substr(valImg_113209$id, 1, 1) 
+loc_val113209_2 <- substr(valImg_113209$id, 2, 2)
+loc_val113209_3 <- substr(valImg_113209$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_val113209_1,"/",loc_val113209_2,"/",loc_val113209_3)
+# Copy 113209 images to validation folder
+# Comment out file.copy() after images are copied into the directory
+valf113209 <- paste0(valImg_113209$id, ".jpg")
+#file.copy(file.path(original_dataset_path, valf113209), file.path(validation_113209_dir))
+
+
+# Locate 126637 train images
+loc_train126637_1 <- substr(trainImg_126637$id, 1, 1) 
+loc_train126637_2 <- substr(trainImg_126637$id, 2, 2)
+loc_train126637_3 <- substr(trainImg_126637$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_train126637_1,"/",loc_train126637_2,"/",loc_train126637_3)
+# Copy 126637 images to train folder
+# Comment out file.copy() after images are copied into the directory
+trainf126637 <- paste0(trainImg_126637$id, ".jpg")
+#file.copy(file.path(original_dataset_path, trainf126637), file.path(train_126637_dir))
+# Locate 126637 test images
+loc_test126637_1 <- substr(testImg_126637$id, 1, 1) 
+loc_test126637_2 <- substr(testImg_126637$id, 2, 2)
+loc_test126637_3 <- substr(testImg_126637$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_test126637_1,"/",loc_test126637_2,"/",loc_test126637_3)
+# Copy 126637 images to test folder
+# Comment out file.copy() after images are copied into the directory
+testf126637 <- paste0(testImg_126637$id, ".jpg")
+#file.copy(file.path(original_dataset_path, testf126637), file.path(test_126637_dir))
+# Locate 126637 validation images
+# Locate 126637 val images
+loc_val126637_1 <- substr(valImg_126637$id, 1, 1) 
+loc_val126637_2 <- substr(valImg_126637$id, 2, 2)
+loc_val126637_3 <- substr(valImg_126637$id, 3, 3)
+original_dataset_path <- paste0(original_dataset_dir,"/",loc_val126637_1,"/",loc_val126637_2,"/",loc_val126637_3)
+# Copy 126637 images to validation folder
+# Comment out file.copy() after images are copied into the directory
+valf126637 <- paste0(valImg_126637$id, ".jpg")
+#file.copy(file.path(original_dataset_path, valf126637), file.path(validation_126637_dir))
+
+```
+
+$~$
+
+Get the counts of training images, validation images, and testing images for each class.
+
+$~$
+
+```{r sample-counts2}
+
+cat("Training images for landmark ID 20409:", length(list.files(train_20409_dir)), "\n")
+cat("Training images for landmark ID 83144:", length(list.files(train_83144_dir)), "\n")
+cat("Training images for landmark ID 113209:", length(list.files(train_113209_dir)), "\n")
+cat("Training images for landmark ID 126637:", length(list.files(train_126637_dir)), "\n")
+
+cat("Validation images for landmark ID 20409:", length(list.files(validation_20409_dir)), "\n")
+cat("Validation images for landmark ID 83144:", length(list.files(validation_83144_dir)), "\n")
+cat("Validation images for landmark ID 113209:", length(list.files(validation_113209_dir)), "\n")
+cat("Validation images for landmark ID 126637:", length(list.files(validation_126637_dir)), "\n")
+
+cat("Testing images for landmark ID 20409:", length(list.files(test_20409_dir)), "\n")
+cat("Testing images for landmark ID 83144:", length(list.files(test_83144_dir)), "\n")
+cat("Testing images for landmark ID 113209:", length(list.files(test_113209_dir)), "\n")
+cat("Ttesting images for landmark ID 126637:", length(list.files(test_126637_dir)), "\n")
+
+```
+
+$~$
+
+Read images from directories, convert them into batches of pre-processed floating-point tensors. 
+
+$~$
+
+```{r read-images-from-data2-directories}
+
+train_datagen <- image_data_generator(rescale = 1/255)        
+validation_datagen <- image_data_generator(rescale = 1/255) 
+test_datagen <- image_data_generator(rescale = 1/255) 
+
+train_generator <- flow_images_from_directory(                
+  train_dir,                                                 
+  train_datagen,                                             
+  target_size = c(150, 150),                                  
+  batch_size = 20,                                            
+  class_mode = "categorical"
+)
+
+validation_generator <- flow_images_from_directory( 
+  validation_dir,
+  validation_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "categorical"
+)
+
+test_generator <- flow_images_from_directory(
+  test_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "categorical",
+  seed = 100
+)
+
+```
+
+$~$
+
+### Multiclass Classifier: Model One: the Base Model
+
+The same architecture for the binary classifier (except for the 4 units for output layer and softmax activation function) was used to build the multiclass classifier.
+
+The model contained a linear stack of 11 layers, including 4 alternated convolution layers (with relu activation) to augment the network capacity, each followed by a pooling layer to downsample feature maps to reduce feature-map coefficients processing and induce spatial-filter hierarchies. After these 8 intermediate layers was a flattened layer and two dense layers (i.e. fully connected layers). For the 4-label classification problem, the output layer (the 2nd dense layer) had 4 single units, with the softmax activation. The Softmax regression is a form of multinomial logistic regression that normalizes an input value into a vector of 4 values that follows a probability distribution, where the total sums up to 1.
+
+To configure the learning process, the RMSProp optimizer with the learning rate of 0.0001 was used in the compilation step and the `categorical_crossentropy` was used as the loss function. "Accuracy" was used as the metrics, which calculated how often predictions equal labels.
+
+$~$
+
+```{r cnn4}
+
+tensorflow::tf$random$set_seed(100)
+
+cnn4 <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dense(units = 512, activation = "relu") %>%
+  layer_dense(units = 4, activation = "softmax")
+
+summary(cnn4)
+
+cnn4 %>% compile(
+  loss = "categorical_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-4),
+  metrics = c("acc")
+)
+
+history4 <- cnn4 %>% fit_generator(
+  train_generator,
+  steps_per_epoch = 100,
+  epochs = 30,
+  validation_data = validation_generator,
+  validation_steps = 50
+)
+
+# Save the model
+save_model_hdf5(cnn4, "models/cnn4.h5")
+
+# Plot the loss and accuracy of the model during training
+plot(history4)
+
+# Evaluate the model
+cnn4 %>% evaluate_generator(test_generator, steps = 50)
+
+```
+
+$~$
+
+The same as the model one of the binary classifier, the loss and accuracy plot for this model also showed the sign of overfitting. After 6 epochs, the validation loss gradually rose further above the training loss, and the training accuracy rose further above the validation accuracy. The overfitting problem may have been caused by the relatively small training sample data set (3431 images in 4 classes). 
+
+Even though the model was overfitted, the model still reached approximately 91% test accuracy.
+
+### Multiclass Classifier: Model Two: Adding Data Augmentation and Dropout
+
+Based on the same architecture for model one, the second model added data augmentation and dropout to resolve the overfitting issue.
+
+$~$
+ 
+```{r cnn5}
+
+tensorflow::tf$random$set_seed(100)
+
+cnn5 <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 512, activation = "relu") %>%
+  layer_dense(units = 4, activation = "softmax")
+
+cnn5 %>% compile(
+  loss = "categorical_crossentropy",
+  optimizer = optimizer_rmsprop(lr = 1e-4),
+  metrics = c("acc")
+)
+
+datagen <- image_data_generator(
+  rescale = 1/255,
+  rotation_range = 40,
+  width_shift_range = 0.2,
+  height_shift_range = 0.2,
+  shear_range = 0.2,
+  zoom_range = 0.2,
+  horizontal_flip = TRUE
+)
+
+test_datagen <- image_data_generator(rescale = 1/255)
+
+train_generator <- flow_images_from_directory(          
+  train_dir,                                           
+  datagen,                                             
+  target_size = c(150, 150),                           
+  batch_size = 20,
+  class_mode = "categorical"                                
+)
+validation_generator <- flow_images_from_directory(
+  validation_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "categorical"
+)
+history5 <- cnn5 %>% fit_generator(
+  train_generator,
+  steps_per_epoch = 100,
+  epochs = 30,
+  validation_data = validation_generator,
+  validation_steps = 50
+)
+
+# Save the model
+save_model_hdf5(cnn5, "models/cnn5.h5")
+
+# Plot the loss and accuracy of the model during training
+plot(history5)
+
+# Reload saved model
+cnn5 <- load_model_hdf5("models/cnn5.h5")
+
+test_generator <- flow_images_from_directory(
+  test_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "categorical",
+  seed = 100
+)
+
+cnn5 %>% evaluate_generator(test_generator, steps = 50)
+
+```
+ 
+$~$
+
+As with binary classification model two, the use of data augmentation and dropout techniques mostly resolved the overfitting issue. The loss and accuracy plot showed that both training loss and validation loss gradually went down and converged after epoch 25. The accuracy for both gradually increased and converged after epoch 25; however, the validation accuracy rose very slightly above the training accuracy at epoch 30. It could have been caused by the dropout rate (50%) being a bit high. Further testing could be done with lower dropout rates.
+ 
+The evaluation of this model showed approximately 89.8% test accuracy, which is lower than the first model which had approximately 91% accuracy. It was a bit surprising that the overfitted model had better accuracy than the better-fitted model.
+
+### Multiclass Classifier: Model Three: Using RMSProp's Adaptive Learning Rate 
+
+With the binary classification models, the optimizer RMSProp was manually set with a very low learning rate (0.0001) for the first two models; removing the manual setting of the learning rate for the third model reduced its accuracy slightly.
+
+The same testing of removing the manual setting of the learning rate was done for this multiclass model, to compare with the result of the binary classification model three.
+
+$~$
+
+```{r cnn6}
+
+tensorflow::tf$random$set_seed(100)
+
+cnn6 <- keras_model_sequential() %>%
+  layer_conv_2d(filters = 32, kernel_size = c(3, 3), activation = "relu",
+                input_shape = c(150, 150, 3)) %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 128, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_flatten() %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 512, activation = "relu") %>%
+  layer_dense(units = 4, activation = "softmax")
+
+cnn6 %>% compile(
+  optimizer = "rmsprop", 
+  loss = "categorical_crossentropy",
+  #optimizer = optimizer_rmsprop(lr = 1e-4),
+  metrics = c("acc")
+)
+
+datagen <- image_data_generator(
+  rescale = 1/255,
+  rotation_range = 40,
+  width_shift_range = 0.2,
+  height_shift_range = 0.2,
+  shear_range = 0.2,
+  zoom_range = 0.2,
+  horizontal_flip = TRUE
+)
+
+test_datagen <- image_data_generator(rescale = 1/255)
+
+train_generator <- flow_images_from_directory(          
+  train_dir,                                           
+  datagen,                                             
+  target_size = c(150, 150),                            
+  batch_size = 20,
+  class_mode = "categorical",
+  seed = 100
+)
+validation_generator <- flow_images_from_directory(
+  validation_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "categorical",
+  seed = 100
+)
+
+history6 <- cnn6 %>% fit_generator(
+  train_generator,
+  steps_per_epoch = 100,
+  epochs = 30,
+  validation_data = validation_generator,
+  validation_steps = 50
+)
+
+# Save the model
+save_model_hdf5(cnn6, "models/cnn6.h5")
+
+# Plot the loss and accuracy of the model during training
+plot(history6)
+
+# Reload saved model
+#cnn6 <- load_model_hdf5("models/cnn6.h5")
+
+test_generator <- flow_images_from_directory(
+  test_dir,
+  test_datagen,
+  target_size = c(150, 150),
+  batch_size = 20,
+  class_mode = "categorical",
+  seed = 100
+)
+
+cnn6 %>% evaluate_generator(test_generator, steps = 50)
+
+```
+
+$~$
+
+Using the default RMSProp's adaptive learning rate (instead of the manually set low learning rate) in the third model improved the test accuracy of the model from approximately 88.2% to 93.1%. Unlike the binary classification model three, RMSProp's adaptive learning rate was more effective than manually tuning the learning rate hyperparameter in this case. 
+
+Even though the RMSProp optimizer seemed to work well without having manually configured the learning rate in this case, as the learning rate was an important hyperparameter, further tuning of this parameter could be tested to see if an optimal learning rate could be found to improve accuracy.  
+ 
+    
+# CNN: Visualizing Intermediate Activations
+
+Activation maps can be created to visualize the activations on intermediate layers of a convolutional neural network. They are useful for understanding what the network sees and learns from the decomposition of the input on each of its intermediate layers.
+
+Below is an exploration of how the binary classification model two learns a new image it has not seen before.
+
+First, load a new image for which the network has not been trained. Then, create a Keras model to take batches of images as input, and output the activations of all convolution and pooling layers. 
+
+$~$
+
+```{r prep-intermediate-cnn2-outputs}
+
+# Load the cnn2 model
+cnn2 <- load_model_hdf5("models/cnn2.h5")
+
+dev.off()
+
+# Get an input image, not part of the images the network was trained on
+img_path <- "data/test/20409/19d05bdaba97701e.jpg"
+
+#Preprocess the image into a 4D tensor
+img <- image_load(img_path, target_size = c(150, 150))
+img_tensor <- image_to_array(img)
+img_tensor <- array_reshape(img_tensor, c(1, 150, 150, 3))
+img_tensor <- img_tensor / 255                        
+dim(img_tensor)                                       
+
+# Display the image
+plot(as.raster(img_tensor[1,,,]))
+
+# Extract the outputs of 8 imtermediate layers
+layer_outputs <- lapply(cnn2$layers[1:8], function(layer) layer$output) 
+
+# Create a model that will return these outputs
+activation_cnn2 <- keras_model(inputs = cnn2$input, outputs = layer_outputs) 
+
+# Run the model in predict mode 
+# Return a list of arrays: one array per layer activation
+activations <- activation_cnn2 %>% predict(img_tensor) 
+
+# The activation of the first convolution layer
+first_layer_activation <- activations[[1]]
+dim(first_layer_activation)
+
+# Define a function to plot a channel
+plot_channel <- function(channel) {
+  rotate <- function(x) t(apply(x, 2, rev))
+  image(rotate(channel), axes = FALSE, asp = 1,
+        col = terrain.colors(12))
+}
+
+```
+
+$~$
+
+Visualize the first channel of the activation of the first layer of the original model.
+
+$~$
+
+```{r}
+
+plot_channel(first_layer_activation[1,,,1])
+
+```
+
+$~$
+
+Visualize the second channel of the activation of the first layer of the original model. 
+
+$~$
+
+```{r}
+
+plot_channel(first_layer_activation[1,,,2])
+
+```
+
+$~$
+
+Plot all the activations in the network by extracting and plotting every channel for each of the eight activation maps.
+
+$~$
+
+```{r activations-in-cnn2}
+
+image_size <- 58
+images_per_row <- 16
+
+for (i in 1:8) {
+
+  layer_activation <- activations[[i]]
+  layer_name <- cnn2$layers[[i]]$name
+
+  n_features <- dim(layer_activation)[[4]]
+  n_cols <- n_features %/% images_per_row
+
+  png(paste0("activations_", i, "_", layer_name, ".png"),
+      width = image_size * images_per_row,
+      height = image_size * n_cols)
+  op <- par(mfrow = c(n_cols, images_per_row), mai = rep_len(0.02, 4))
+
+  for (col in 0:(n_cols-1)) {
+    for (row in 0:(images_per_row-1)) {
+      channel_image <- layer_activation[1,,,(col*images_per_row) + row + 1]
+      plot_channel(channel_image)
+    }
+  }
+
+  par(op)
+  dev.off()
+}
+
+```
+
+$~$
+
+The first layer seems to focus on edge detection, retaining almost all the detailed information from the initial input. It is interesting to note that as the image flows through deeper layers, the activations become increasingly abstract. The details on the image become less and less visually interpretable; the pattern encoding becomes less about the visual content of the image itself and more about the information related to the class the image belongs. The sparsity of the activations also increases with the depth of the layer. 
+
+Activation maps give an inside look at how the network distills the input information and repeatedly transforms it to filter out visual details, which are irrelevant to the classification task, and magnifies useful information, which is the information about the class of the image. In this sense, it seems to work like a human brain, which learns to transform visual input into high-level visual concepts while filtering out irrelevant visual details.
+
+$~$
+
+# Results
+
+## Experiment Two
+
+The second experiment investigated using convolutional neural networks to solve a binary classification problem and a multiclass classification problem. After rounds of testing with hyperparameter-tuning, three binary classification models gave high test accuracy between approximately 97.3% and 97.7%. The same network architecture (except for the output layer unit and activation function) was then used to build the multiclass classifier. Three models of the 4-labels classifier reached test accuracy between approximately 89.8% and 93.1%.
+
+
+Model                               Accuracy (4 labels)    Accuracy (2 labels)
+--------------------------------   ---------------------  ---------------------  
+CNN 1 (base model)                           91%                  97.6%
+CNN 2 (augmentation+dropout)               89.8%                  97.7%
+CNN 3 (augmentation+dropout+LR)            93.1%                  97.3%   
+
+
+In comparing the accuracy results between the binary classification models and the 4-label classification models, the former had much higher accuracy. It is understandable because a binary classification task is easier than a multiclassification task.   
+
+For both binary and multiclass classifiers —
+
+*The first models had an overfitting issue, which is common with models that are trained on small sample data. It is interesting to note that even with an overfitting issue, both models still reached above 90% test accuracy. The binary model reached a high test accuracy of approximately 97.6%; the multiclass model had approximately 1.2% higher test accuracy than the better-fitted model two. 
+
+*The second models used data augmentation and dropout techniques and mostly resolved the overfitting issue. However, the test accuracy did not improve. The binary model has about the same accuracy as the first model and the multiclass model had slightly lower accuracy than the first model. One potential issue could be the dropout rate of 50% being a bit high. Further testing could be done with lower dropout rates.
+ 
+*The third models used RMSProp's adaptive learning rate (instead of the manual setting of the learning rate as 0.0001 in the previous two models). The test accuracy reduced approximately 0.4% for the binary model, but improved approximately 3.3% for the multiclass model. As the learning rate is an important hyperparameter, further tuning of this parameter could be tested to see if an optimal learning rate can be found to improve accuracy. Furthermore, different optimizers, such as Adam (Adaptive Moment Estimation), which is an update to the RMSProp, can be explored and compared the accuracy results with RMSProp.
+
+## Activation Maps: What Does a Model See
+
+Activation maps are useful for understanding what the network sees and learns from the decomposition of the input on each of its intermediate layers. It is interesting to note that as the image flows through deeper layers, the activations become increasingly abstract. A look into binary classification model two provided insights on how the network distills the input information, filters out irrelevant visual details, and magnifies useful information about the class of the image. In this sense, it seems to behave like a human brain, which learns to transform visual input into high-level visual concepts, while filtering out irrelevant visual details.
+
+
+$~$
+

@@ -1,0 +1,426 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+----------------------------------------------------------------------------------
+Title: "IST707 HW5 Use Decision Tree to Solve a Mystery in History"
+Name: Sathish Kumar Rajendiran
+Date: 08/12/2020
+-----------------------------------------------------------------------------------
+Exercise: 
+Use Decision Tree to Solve a Mystery in History: who wrote the disputed essays, Hamilton or Madison?
+
+In this homework assignment, you are going to use the decision tree algorithm to solve the disputed essay problem. 
+Last week you used clustering techniques to tackle this problem.
+
+Organize your report using the following template: 
+
+Section 1: Data preparation
+  You will need to separate the original data set to training and testing data for classification experiments. 
+  Describe what examples in your training and what in your test data.
+
+Section 2: Build and tune decision tree models
+  First build a DT model using default setting, and then tune the parameters to see if better model can be generated. 
+  Compare these models using appropriate evaluation measures. Describe and compare the patterns learned in these models.
+  
+Section 3: Prediction
+  After building the classification model, apply it to the disputed papers to find out the authorship. 
+  Does the DT model reach the same conclusion as the clustering algorithms did?
+
+```{r}
+# import libraries 
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+# usage example, to load the necessary library for further processing...
+EnsurePackage("ggplot2")
+EnsurePackage("RColorBrewer")
+EnsurePackage("NbClust")
+EnsurePackage("caret")
+EnsurePackage("rpart")
+EnsurePackage("rpart.plot")
+EnsurePackage("randomForest")
+cat("All Packages are available")
+```
+```{r}
+#Load CSV into data frame
+  filepath <- "/Users/sathishrajendiran/Documents/R/fedPapers85.csv"
+  fedPapersDF <- data.frame(read.csv(filepath,na.strings=c(""," ","NA")),stringsAsFactors=FALSE)
+  dim(fedPapersDF) #85 72
+```
+
+```{r}
+# Preview the structure 
+  str(fedPapersDF)
+# Analyze the spread  
+  summary(fedPapersDF)
+# Preview top few rows  
+  head(fedPapersDF)
+# compare number of articles by authors
+  x <- data.frame(table(fedPapersDF$author))
+  coul <- brewer.pal(5, "Set2")
+  barplot(height=x$Freq, names=x$Var1, col=coul,xlab="Authors", 
+        ylab="Number of Papers", 
+        main="FedPapers85 by Authors", 
+        ylim=c(0,60))
+# view the data
+  View(fedPapersDF)
+```
+
+
+```{r}
+fedPapersDF1 <- subset(fedPapersDF,select=-filename)
+```
+
+
+```{r}
+fedPapersDF1
+```
+```{r}
+# Data preparation
+  
+  # 1. Training Set Preparation
+
+  # Prepare dataframe by removing filename from the list
+  fedPapersDF1 <- subset(fedPapersDF,select=-filename)
+  fedPapersDF1
+  
+  set.seed(100)  
+
+  # lets split disputed articles separately
+  fedPapersDF_Dispt <- subset(fedPapersDF1, author=='dispt')
+  # fedPapersDF_Dispt
+  # lets split non-disputed articles separately
+  fedPapersDF_authors <- subset(fedPapersDF1, author!='dispt')
+  fedPapersDF_authors
+
+  # lets split the non-disputed articles into training and test datasets.creates a value for dividing the data into train and test.
+  # In this case the value is defined as   75% of the number of rows in the dataset
+ 
+  sample_size = floor(0.70*nrow(fedPapersDF_authors)) # 65% --> 80% | 70% --> 82%  | 75 -->78% |80% -- 70%
+  # sample_size #value of the sample size 55
+  # 
+  # set seed to ensure you always have same random numbers generated #324 has 100% training accuracy 
+  train_index = sample(seq_len(nrow(fedPapersDF_authors)),size = sample_size)
+
+  train_data =fedPapersDF_authors[train_index,] #creates the training dataset with row numbers stored in train_index
+  # # table(train_data$author)
+  test_data=fedPapersDF_authors[-train_index,]  # creates the test dataset excluding the row numbers mentioned in train_index
+  # # table(test_data$author)
+  # 
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+
+
+```
+
+
+```{r}
+# Section 2: Build and tune decision tree models
+  
+  # grow tree
+  rtree <- rpart(author~. ,data=train_data, method='class')
+
+  #summarize rtree values
+  summary(rtree)
+  plotcp(rtree) # plot cross-validation results
+  printcp(rtree) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree,main="Classification Tree for fedPapers85", extra= 102) # plot decision tree
+  rsq.rpart(rtree) # plot approximate R-squared and relative error for different splits (2 plots)
+
+```
+```{r}
+
+  # grow tree  with cp=0
+  rtree_0 <- rpart(author~. ,data=train_data, method='class', cp=0, minsplit = 0, maxdepth = 5)
+
+  #summarize rtree values
+  summary(rtree_0)
+  plotcp(rtree_0) # plot cross-validation results
+  printcp(rtree_0) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree_0,main="Classification Tree for fedPapers85", extra= 102) # plot decision tree
+  rsq.rpart(rtree_0) # plot approximate R-squared and relative error for different splits (2 plots)
+  
+```
+
+
+```{r}
+  # grow tree  with cp=0 , minsplit = 10, maxdepth = 5
+  rtree_1 <- rpart(author~. ,data=train_data, method='class', cp=0, minsplit = 1, maxdepth = 5)
+
+  #summarize rtree values
+  summary(rtree_1)
+  plotcp(rtree_1) # plot cross-validation results
+  printcp(rtree_1) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree_1,main="Classification Tree for fedPapers85", extra= 102) # plot decision tree
+  rsq.rpart(rtree_1) # plot approximate R-squared and relative error for different splits (2 plots)
+```
+```{r}
+  # grow tree  with cp=0 , minsplit = 10, maxdepth = 5
+  rtree_2 <- rpart(author~. ,data=train_data, method='class', cp=0, minsplit = 2, maxdepth = 10)
+
+  #summarize rtree values
+  summary(rtree_2)
+  plotcp(rtree_2) # plot cross-validation results
+  printcp(rtree_2) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree_2,main="Classification Tree for fedPapers85", extra= 102) # plot decision tree
+  rsq.rpart(rtree_2) # plot approximate R-squared and relative error for different splits (2 plots)
+```
+```{r}
+  # grow tree  with cp=0 , minsplit = 10, maxdepth = 5
+  rtree_3 <- rpart(author~. ,data=train_data, method='class', cp=0, minsplit = 3, maxdepth = 5)
+
+  #summarize rtree values
+  summary(rtree_3)
+  plotcp(rtree_3) # plot cross-validation results
+  printcp(rtree_3) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree_3,main="Classification Tree for fedPapers85", extra= 102) # plot decision tree
+  rsq.rpart(rtree_3) # plot approximate R-squared and relative error for different splits (2 plots)
+```
+
+```{r}
+  # grow tree  with cp=0 , minsplit = 10, maxdepth = 5
+  rtree_4 <- rpart(author~. ,data=train_data, method='class', cp=0, minsplit = 4, maxdepth = 5)
+
+  #summarize rtree values
+  summary(rtree_4)
+  plotcp(rtree_4) # plot cross-validation results
+  printcp(rtree_4) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree_4,main="Classification Tree for fedPapers85", extra= 102) # plot decision tree
+  rsq.rpart(rtree_4) # plot approximate R-squared and relative error for different splits (2 plots)
+```
+```{r}
+ # grow tree  with cp=0 , minsplit = 3, maxdepth = 5, minbucket = 1
+  rtree_5 <- rpart(author~. ,data=train_data, method='class', cp=0, minsplit = 3, maxdepth = 5, minbucket = 1)
+
+  #summarize rtree values
+  summary(rtree_5)
+  plotcp(rtree_5) # plot cross-validation results
+  printcp(rtree_5) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree_5,main="Classification Tree for fedPapers85", extra= 102) # plot decision tree
+  rsq.rpart(rtree_5) # plot approximate R-squared and relative error for different splits (2 plots)
+```
+
+
+```{r}
+  # grow tree  with cp=0 , minsplit = 10, maxdepth = 5
+  rtree_10 <- rpart(author~. ,data=train_data, method='class', cp=0, minsplit = 4, maxdepth = 3,minbucket = round(5/3))
+
+  #summarize rtree values
+  summary(rtree_10)
+  plotcp(rtree_10) # plot cross-validation results
+  printcp(rtree_10) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree_10,main="Classification Tree for fedPapers85", extra= 102) # plot decision tree
+  rsq.rpart(rtree_10) # plot approximate R-squared and relative error for different splits (2 plots)
+  
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+  
+  predict_unseen <- predict(rtree_10, test_data, type = 'class')
+  # predict_unseen
+  table_mat <- table(test_data$author, predict_unseen)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_mat)
+  
+  
+  
+```
+
+```{r}
+# Section 3: Prediction | train data
+
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+
+
+  predict_unseen <- predict(rtree_0, train_data, type = 'class')
+  # predict_unseen
+  table_mat <- table(train_data$author, predict_unseen)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_mat)
+
+```
+```{r}
+# Section 3: Prediction | Test Data
+
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+
+  predict_DT0 <- predict(rtree_0, test_data, type = 'class')
+  # predict_unseen
+  table_DT0 <- table(test_data$author, predict_DT0)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_DT0)
+```
+```{r}
+# Section 3: Prediction | Test Data
+
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+
+
+  predict_DT1 <- predict(rtree_1, test_data, type = 'class')
+  # predict_unseen
+  table_DT1 <- table(test_data$author, predict_DT1)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_DT1)
+```
+```{r}
+# Section 3: Prediction | Test Data
+
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+
+
+  predict_DT2 <- predict(rtree_2, test_data, type = 'class')
+  # predict_unseen
+  table_DT2 <- table(test_data$author, predict_DT2)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_DT2)
+```
+
+```{r}
+# Section 3: Prediction | Test Data
+
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+
+
+  predict_DT5 <- predict(rtree_5, test_data, type = 'class')
+  # predict_unseen
+  table_DT5 <- table(test_data$author, predict_DT5)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_DT5)
+```
+
+```{r}
+# Section 3: Prediction | Test Data
+
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+
+
+  predict_DT10 <- predict(rtree_10, test_data, type = 'class')
+  # predict_unseen
+  table_DT10 <- table(test_data$author, predict_DT10)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_DT10)
+```
+
+```{r}
+# Section 3: Prediction | Disputed Data
+  cat("\nDisputed Articles by Author:")
+  table(fedPapersDF_Dispt$author)
+  cat("\nArticles by Author:")
+  table(fedPapersDF_authors$author)
+  cat("\nTrain_data - Articles by Author:")
+  table(train_data$author)
+  cat("\nTest_data - Articles by Author:")
+  table(test_data$author)
+  predict_final <- predict(rtree_5, fedPapersDF_Dispt, type = 'class')
+  table_final <- table(fedPapersDF_Dispt$author, predict_final)
+  cat("\n\nPrediction results : \n\n")
+  table_final 
+```
+
+
+```{r}
+predict_finaldf <- data.frame(predict_final)
+  cat("\n\nPrediction results by article : \n\n")
+  View(predict_finaldf)
+```
+
+
+```{r}
+# Random Forest prediction of fedPapersDF1 data
+  EnsurePackage("randomForest")
+
+  # View(fedPapersDF1)
+  cat("\n All Articles by Author:")
+  table(fedPapersDF$author)
+    
+  fit <- randomForest(y=fedPapersDF1$author, x=fedPapersDF1[2:ncol(fedPapersDF1)], data=fedPapersDF1, ntree=100
+                      , keep.forest=FALSE, importance=TRUE)
+  print(fit) # view results
+  importance(fit) # importance of each predictor
+```
+```{r}
+  rf_importance <- data.frame(importance(fit)) # importance of each predictor
+  rf_importance
+```
+```{r}
+# Random Forest prediction of fedPapersDF1 data
+  EnsurePackage("randomForest")
+
+  # View(fedPapersDF1)
+  cat("\n All Articles by Author:")
+  table(fedPapersDF$author)
+    
+  fit <- randomForest(y=fedPapersDF1$author, x=fedPapersDF1[2:ncol(fedPapersDF1)], data=fedPapersDF1, ntree=100
+                      , keep.forest=FALSE, importance=TRUE)
+  print(fit) # view results
+  importance(fit) # importance of each predictor
+```
+
+

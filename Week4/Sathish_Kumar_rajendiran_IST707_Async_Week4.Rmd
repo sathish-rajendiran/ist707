@@ -1,0 +1,64 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+-----------------------------------------------------------------------------------
+Title: "IST707 Week4 Async"
+Name: Sathish Kumar Rajendiran
+Date: 07/26/2020
+-----------------------------------------------------------------------------------
+Given two objects represented by the tuples (22,1,42,10) and (20,0,36,8), compute:
+
+The Euclidean distance between them
+The Manhattan distance between them
+The cosine similarity between them
+
+```{r}
+install.packages("philentropy")
+library(philentropy)
+```
+
+
+```{r}
+#4.4 distance measures
+
+#define vectors a and b
+a <- c(22,1,42,10)
+b <- c (20,0,36,8)
+
+cos_dist <- function(a,b){
+  cosine_d <- (a%*%b) /sqrt(a%*%a*b%*%b)
+  cat(cosine_d)
+}
+cos_dist(a,b) #0.999369
+
+
+dist_calculation <- function(a, b, metric = c("euclidean", "manhatten")) {
+    metric <- match.arg(metric)
+    switch(metric,
+           euclidean = sqrt(sum((a - b) ^ 2)),
+           manhatten = sum(abs(a - b)
+           ))
+}
+dist_calculation(a,b) #euclidean [1] 6.708204
+dist_calculation(a,b,"manhatten") #[1] 11
+
+```
+
+
+```{r}
+dist(x,method = "euclidean")
+```
+
+
+
+```{r}
+dist(x,method = "manhattan")
+```
+
+
+```{r}
+distance(x,method = "cosine")
+```
+

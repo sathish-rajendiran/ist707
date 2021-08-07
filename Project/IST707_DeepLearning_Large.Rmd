@@ -1,0 +1,472 @@
+---
+title: "IST707-Deep Learning (Experiment-1)"
+output: html_document
+---
+
+```{r setup}
+# install.packages('keras')
+# install.packages('repr')
+library(keras)
+library(repr)
+library(tidyr)
+library(ggplot2)
+library(tensorflow)
+library(tidyr)
+library(ggplot2)
+library(data.table)
+library(stringr)
+# Needed for pre-process/image_load or load_img functionality
+library(reticulate)
+py_install('pillow')
+# NOTE - Restart R from Session > Restart R to load pillow!
+
+# Needed for function image_data_generator()
+# install_tensorflow()
+
+```
+
+### Load the data
+
+
+Prior to loading the data, we will first pre-process a couple of random images from the train data-set and visualize the dimensions, pixel values etc.
+
+
+``` {r pre-process}
+train_path <- '/Users/venkatasharatsripada/Downloads/kaggle_image_retrieval/train/'
+test_path <- '/Users/venkatasharatsripada/Downloads/kaggle_image_retrieval/test/'
+
+train_images_raw <- flow_images_from_directory(train_path,
+                                               class_mode = "categorical",
+                                               classes = NULL, 
+                                               batch_size = 32)
+
+# Load a single image and examine it for pre-processing
+image_sample_path <- train_images_raw$filepaths[1]
+
+# Converts an image to pillow/pil object
+image_sample <- image_load(image_sample_path)
+                           
+# Converts a pil image to numpy array
+image_sample_array <- image_to_array(image_sample)
+image_sample <- as.data.frame(image_sample_array)
+
+colnames(image_sample) <- seq_len(ncol(image_sample))
+image_sample$y <- seq_len(nrow(image_sample))
+image_sample <- gather(image_sample, "x", "value", -y)
+image_sample$x <- as.integer(image_sample$x)
+
+# Visualizations:
+# Part-1: Plot the sample image
+ggplot(image_sample, aes(x = x, y = y, fill = value)) +
+  geom_tile() +
+  xlim(c(0, 600)) + 
+  scale_fill_gradient(low = "white", high = "black", na.value = NA) +
+  scale_y_reverse() +
+  theme_minimal() +
+  theme(panel.grid = element_blank())   +
+  theme(aspect.ratio = 1) +
+  xlab("") +
+  ylab("")  
+
+```
+
+This shows us that the images are 600 x 800 with pixel values between 0-255. 
+
+
+Using the flow_images_from_directory generator with the following options:
+
+
+ - class_mode: categorical
+
+
+   Determines the type of label arrays that are returned: "categorical" will be 2D one-hot encoded labels
+
+
+ - Returns:
+ 
+ 
+   (x, y) where x is an array of image data and y is a array of corresponding labels.
+
+
+
+``` {r load-data}
+
+# Read the train csv
+dframe <- read.table(file='/Users/venkatasharatsripada/Downloads/kaggle_image_retrieval/train.csv', 
+                     header=TRUE,
+                     sep=',',
+                     col.names=c('id', 'landmark_id'))
+dtable <- data.table(dframe, key='id')
+
+train_data_gen = image_data_generator(rescale = 1/255)
+
+# Image size scale-down to 100 x 100 images
+img_width <- 100
+img_height <- 100
+target_size <- c(img_width, img_height)
+
+# RGB = 3 channels
+# ----- Error -----
+# 2020-09-01 00:03:20.313902: W tensorflow/core/framework/op_kernel.cc:1753] OP_REQUIRES failed at conv_ops_fused_impl.h:716 : Invalid argument: input depth must be evenly divisible by filter depth: 4 vs 3
+# ----- Solution -----
+# Since using color mode as RGBA in flow_images_from_directory, keep channels as 4
+
+channels <- 4
+
+train_images <- flow_images_from_directory(train_path,
+                                           train_data_gen,
+                                           target_size = target_size,
+                                           class_mode = "categorical",
+                                           classes = NULL, 
+                                           color_mode = "rgba",
+                                           batch_size = 32)
+
+table(factor(train_images$classes))
+
+
+```
+
+
+
+### Visualize images with labels (subset of 25, 100 x 100 images) 
+
+
+``` {r first-few-images}
+par(mfcol=c(5,5))
+par(mar=c(0, 0, 1.5, 0), xaxs='i', yaxs='i')
+
+for (i in 1:25) { 
+  img_path <- train_images$filepaths[i]
+  img_name <- train_images$filenames[i]
+  img <- image_load(img_path,
+                    target_size = target_size)
+  img_array <- image_to_array(img)
+  rev_image <- t(apply(img_array[, ,1], 2, rev))
+  
+  # Get the train label using key:value store
+  key <- unlist(str_split(unlist(str_split(img_name, '/'))[4], '.jpg'))[1]
+  train_label <- as.data.frame(dtable[key])[1, 2]
+  
+  image(1:100, 1:100, rev_image, col = gray((0:255)/255), xaxt = 'n', yaxt = 'n',
+        main = paste(train_label))
+}
+```
+
+
+
+### Setup model (with landmark classified sub-directories)
+
+
+Using some shell scripts, we classified images based on their landmark ids. We used train.csv, and created sub-directories based on landmark-ids and had several corresponding images under them. 
+
+
+```{r re-train1}
+train_path_class <- '/Users/venkatasharatsripada/Downloads/kaggle_image_retrieval/train_classes/'
+test_path_class <- '/Users/venkatasharatsripada/Downloads/kaggle_image_retrieval/test_classes/'
+validation_path_class <- '/Users/venkatasharatsripada/Downloads/kaggle_image_retrieval/validation_classes/'
+
+train_images_class <- flow_images_from_directory(train_path_class,
+                                                 train_data_gen,
+                                                 target_size = target_size,
+                                                 class_mode = "categorical",
+                                                 classes = NULL, 
+                                                 color_mode = "rgba",
+                                                 batch_size = 64,
+                                                 seed = 40)
+
+test_images_class <- flow_images_from_directory(test_path_class,
+                                          train_data_gen,
+                                          target_size = target_size,
+                                          class_mode = "categorical",
+                                          classes = NULL, 
+                                          color_mode = "rgba",
+                                          batch_size = 64,
+                                          seed = 40)
+
+validation_images_class <- flow_images_from_directory(validation_path_class,
+                                          train_data_gen,
+                                          target_size = target_size,
+                                          class_mode = "categorical",
+                                          classes = NULL, 
+                                          color_mode = "rgba",
+                                          batch_size = 64,
+                                          seed = 40)
+```
+
+
+``` {r keras model-2}
+# number of training samples
+train_samples_class <- train_images_class$n
+
+# number of validation samples
+valid_samples_class <- validation_images_class$n
+
+# define batch size and number of epochs
+batch_size <- 64
+epochs <- 15
+
+# initialize the model
+model_class <- keras_model_sequential()
+
+# add layers
+model_class %>%
+  layer_conv_2d(filter = 32, kernel_size = c(3,3), padding = "same", input_shape = c(img_width, img_height, channels)) %>%
+  layer_activation("relu") %>%
+  
+  # Use max pooling
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%
+  
+  # Second hidden layer
+  layer_conv_2d(filter = 64, kernel_size = c(3,3), padding = "same") %>%
+  layer_activation("relu") %>%
+  # old
+  # layer_activation_leaky_relu(0.5) %>%
+  layer_batch_normalization() %>%
+
+  # Use max pooling
+  layer_max_pooling_2d(pool_size = c(2,2)) %>%
+  layer_dropout(0.2) %>%
+  
+  layer_conv_2d(filter = 128, kernel_size = c(3,3), padding = "same") %>%
+  layer_activation("relu") %>%
+  
+  
+  # Flatten max filtered output into feature vector 
+  # and feed into dense layer
+  layer_flatten() %>%
+  layer_dense(units = 512, activation = "relu") %>%
+  layer_dropout(0.5) %>%
+
+  # Outputs from dense layer are projected onto output layer
+  # ------ Error -------
+  # Error in py_call_impl(callable, dots$args, dots$keywords) : 
+  # InvalidArgumentError:  logits and labels must be broadcastable: logits_size=[32,664] labels_size=[32,6]
+	# [[node categorical_crossentropy/softmax_cross_entropy_with_logits (defined at /util/deprecation.py:324) ]]    [Op:__inference_train_function_12556]
+  # ---- Solution -----
+  # The number of output nodes should be equal to the number of landmark classifiers
+
+  layer_dense(units = 1035, activation = "softmax")
+```
+
+
+
+### Compile the Model
+
+
+Before the model is ready for training, it needs a few more settings. These are added during the model’s compile step:
+
+
+Loss function — This measures how accurate the model is during training. We want to minimize this function to “steer” the model in the right direction.
+
+
+Optimizer — This is how the model is updated based on the data it sees and its loss function.
+
+
+Metrics — Used to monitor the training and testing steps. The following example uses accuracy, the fraction of the images that are correctly classified.
+
+
+``` {r compile}
+# Compile the model
+model_class %>% compile(
+  loss = "categorical_crossentropy",
+  #optimizer = optimizer_rmsprop(lr = 0.0001, decay = 1e-6),
+  optimizer = 'adam',
+  metrics = "accuracy"
+)
+
+# View the architecture of convnet
+summary(model_class)
+```
+
+
+### Fit the model
+
+Since we used image_data_generator() and flow_images_from_directory(), we will now use fit_generator() to fit the training data
+
+
+``` {r fit-2}
+
+hist <- model_class %>% fit_generator(
+  # training data
+  train_images_class,
+  
+  # epochs
+  steps_per_epoch = as.integer(train_samples_class / batch_size), 
+  epochs = epochs, 
+  
+  # validation data
+  validation_data = validation_images_class,
+  validation_steps = as.integer(valid_samples_class / batch_size),
+  
+  # print progress
+  verbose = 2
+)
+
+# save the model
+model_class %>% save_model_hdf5('/Users/venkatasharatsripada/Downloads/kaggle_image_retrieval/landmarks_model_exp_4.h5', overwrite = TRUE)
+
+plot(hist)
+```
+
+
+Saving the model helps during intense training. In many instances, RStudio crashed or hung and the corresponding load_model_hdf5() turned out to be useful
+
+
+``` {r load_model}
+model_class <- load_model_hdf5('/Users/venkatasharatsripada/Downloads/kaggle_image_retrieval/landmarks_model_exp_4.h5', compile=TRUE)
+```
+
+### Evaluate Accuracy
+
+``` {r evaluate accuracy}
+epochs <- 15
+score <- model_class %>% evaluate_generator(test_images_class, steps = epochs)
+print(score)
+```
+
+### Predictions (with landmark classified sub-directories)
+
+
+A prediction is an array of n numbers, where n matches the number of outputs in the output layer. Also, since we have been using generator functions we will use predict_generator function with the following options:
+
+
+- keras objects - test images (generator object)
+
+- steps - batches of samples to yield from generator before stopping
+
+
+``` {r pred-2}
+# Make predictions based on new model and test_images
+pred_class <- model_class %>% predict_generator(test_images_class, steps = 5, verbose = 1)
+
+# Get the highest prediction output for the first image
+which.max(pred_class[1,])
+```
+
+Also, let's visualize the accuracy for the first 25 images
+
+``` {r vis-accuracy}
+# Get true labels for test images
+test_labels_class <- c()
+for (i in 1:test_images_class$n) {
+  img_path <- test_images_class$filepaths[i]
+  test_labels_class <- c(test_labels_class, unlist(strsplit(img_path, '/'))[7])
+}
+
+par(mfcol=c(5,5))
+par(mar=c(0, 0, 1.5, 0), xaxs='i', yaxs='i')
+
+for (i in 1:25) { 
+  img_path <- test_images_class$filepaths[i]
+  img_name <- test_images_class$filenames[i]
+  print(img_name)
+  img <- image_load(img_path,
+                    target_size = target_size)
+  img_array <- image_to_array(img)
+  rev_image <- t(apply(img_array[, ,1], 2, rev))
+  
+  predicted_label <- which.max(pred_class[i, ]) - 1
+  true_label <- test_labels_class[i]
+  if (predicted_label == true_label) {
+    color <- '#008800' 
+  } else {
+    color <- '#bb0000'
+  }
+  image(1:100, 1:100, rev_image, col = gray((0:255)/255), xaxt = 'n', yaxt = 'n',
+        main = paste0(predicted_label, " (",
+                      true_label, ")"),
+        col.main = color)
+}
+```
+
+
+### Used pre-defined convnets
+
+
+As a final step in the experiment, we will use Visual Geometry Group (VGG). VGG16 is a popular convolutional net. 
+
+
+``` {r vss16}
+model_vgg <- application_vgg16(weights = "imagenet")
+
+predictions <- model_vgg$output %>% 
+  layer_dense(units=1245)
+
+model <- keras_model(inputs = model_vgg$input, outputs = predictions)
+
+# Compile the VGG16 model
+# Compile the model
+model %>% compile(
+  loss = "categorical_crossentropy",
+  #optimizer = optimizer_rmsprop(lr = 0.0001, decay = 1e-6),
+  optimizer = 'adam',
+  metrics = "accuracy"
+)
+
+# View the architecture of convnet
+summary(model)
+
+epochs <- 15
+
+hist <- model %>% fit_generator(
+  # training data
+  train_images_class,
+  
+  # epochs
+  steps_per_epoch = as.integer(train_samples_class / batch_size), 
+  epochs = epochs, 
+  
+  # validation data
+  validation_data = validation_images_class,
+  validation_steps = as.integer(valid_samples_class / batch_size),
+  
+  # print progress
+  verbose = 2
+)
+
+```
+
+### Class-activation map
+
+There is very limited information of how to run CAM in R. Below is an example of running it with a pre-defined model application_vgg16() but we need to adapt this to model_class eventually to debug the neural net related to Model-1 experiments.
+
+
+``` {r cam}
+model <- application_vgg16(weights = "imagenet")
+img_path <- train_images_class$filepaths[1]
+img <- image_load(img_path, target_size = c(224, 224)) %>% 
+  image_to_array() %>%
+  array_reshape(dim = c(1, 224, 224, 3)) %>%
+  imagenet_preprocess_input()
+
+ 
+# Make a prediction
+preds <- model %>% predict(img)
+imagenet_decode_predictions(preds, top = 3)[[1]]
+
+which.max(preds[1,])
+
+# Get the most prominent portion of the image (59.5% match)
+ obelisk <- model$output[, 683]
+
+# Get the output feature map
+ last_conv_layer <- model %>% get_layer("block5_conv3") 
+
+# Disable tf eager execution
+# tf$compat$v1$disable_eager_execution()
+
+  grads <- k_gradients(obelisk, last_conv_layer$output)[[1]]
+  
+  pooled_grads <- k_mean(grads, axis = c(1, 2, 3))   
+  
+  iterate <- k_function(list(model$input), 
+                        list(pooled_grads, last_conv_layer$output[1,,,]))
+  
+  c(pooled_grads_value, conv_layer_output_value) %<-% iterate(list(img))
+  for (i in 1:512) { 
+    conv_layer_output_value[,,i] <-
+      conv_layer_output_value[,,i] * pooled_grads_value[[i]]
+  }
+  
+  heatmap <- apply(conv_layer_output_value, c(1,2), mean) 
+```

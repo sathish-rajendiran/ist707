@@ -1,0 +1,636 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  pdf_document: default
+  html_notebook: default
+---
+
+------------------------------------------------------------------------------------------------------------------
+Title: "IST707 HW6 Use Classification Algortithms for handwriting recognition"
+Name: Sathish Kumar Rajendiran
+Date: 08/25/2020
+------------------------------------------------------------------------------------------------------------------
+Exercise: 
+compare naïve Bayes , decision tree, SVMs, kNN, and Random Forest algorithmse for handwriting recognition.
+
+In this homework assignment, you are going to use the decision tree algorithm to solve the disputed essay problem. 
+Last week you used clustering techniques to tackle this problem.
+
+Organize your report using the following template: 
+
+Section 1: Introduction
+    Briefly describe the classification problem and general data preprocessing. 
+    Note that some data preprocessing steps maybe specific to a particular algorithm. 
+    Report those steps under each algorithm section.
+    
+Section 2: Decision tree
+    Build a decision tree model. Tune the parameters, such as the pruning options, and report the 3-fold CV accuracy.
+    
+Section 3: Naïve Bayes
+    Build a naïve Bayes model. Tune the parameters, such as the discretization options, to compare results.
+    
+Section 4: kNN
+    Build a kNN model. Tune the parameters, such as the discretization options, to compare results.
+    
+Section 5: SVM
+    Build a SVM model. Tune the parameters, such as the discretization options, to compare results.
+    
+Section 6: Random Forest
+    Build a Random Forest model. Tune the parameters, such as the discretization options, to compare results.
+    
+Section 7: Algorithm performance comparison
+  Compare the results from the two algorithms. Which one reached higher accuracy? Which one runs faster? Can you explain why?
+  
+Section 8: Kaggle test result (1 extra point)
+  Report the test accuracy for the naïve Bayes and decision tree models. Discuss whether overfitting occurs in these models.
+  
+Grading rubrics:
+  1. Are the models constructed correctly?
+  2. Is the result analysis conclusion convincing?
+  3. Is sufficient details provided for others to repeat the analysis?
+  4. Does the analysis include irrelevant content?
+  5. Successful submission to Kaggle?
+
+```{r}
+# import libraries 
+#create a function to ensure the libraries are imported
+EnsurePackage <- function(x){
+  x <- as.character(x)
+    if (!require(x,character.only = TRUE)){
+      install.packages(pkgs=x, repos = "http://cran.us.r-project.org")
+      require(x, character.only = TRUE)
+    }
+  }
+```
+
+
+```{r}
+# usage example, to load the necessary library for further processing...
+EnsurePackage("class") # kNN
+EnsurePackage("e1071")
+EnsurePackage("sqldf")
+EnsurePackage("FactoMineR")
+EnsurePackage("rpart.plot")  # Decision Tree
+EnsurePackage("randomForest") # Random Forest
+EnsurePackage("caret") # Plot ConfusionMatrix
+EnsurePackage("ggplot2")
+EnsurePackage("kernlab")
+EnsurePackage("dplyr")
+EnsurePackage("RColorBrewer")
+EnsurePackage("stringr")
+cat("All Packages are available")
+```
+
+```{r}
+#Load Train CSV into data frame
+  train_data <- "/Users/sathishrajendiran/Documents/R/HW6/digit_train.csv"
+  digitTrainDF <- data.frame(read.csv(train_data,na.strings=c(""," ","NA")),stringsAsFactors=FALSE)
+  dim(digitTrainDF) #42000   785
+  digitTrainDF$label <- as.factor(digitTrainDF$label)
+  
+  # Preview the structure 
+  str(digitTrainDF)
+# Analyze the spread  
+  summary(digitTrainDF)
+# Preview top few rows  
+  head(digitTrainDF)
+```
+ 
+
+ 
+
+```{r}
+# 1. Training Set Preparation
+  set.seed(100)  
+
+  # lets split the Training data set int into training and test datasets.creates a value for dividing the data into train and test.
+  # In this case the value is defined as   80% of the number of rows in the dataset
+  sample_size = floor(0.80*nrow(digitTrainDF)) 
+  # sample_size #value of the sample size 55
+  # 
+  # set seed to ensure you always have same random numbers generated #324 has 100% training accuracy 
+  train_index = sample(seq_len(nrow(digitTrainDF)),size = sample_size)
+
+  train_set =digitTrainDF[train_index,] #creates the training dataset with row numbers stored in train_index
+  # # table(train_data$author)
+  test_set=digitTrainDF[-train_index,]  # creates the test dataset excluding the row numbers mentioned in train_index
+  # # table(test_data$author)
+  cat("\nImages by Labels:")
+  table(digitTrainDF$label)
+  cat("\nTrain_set - Images by Labels:")
+  table(train_set$label)
+  cat("\nTest_set - Images by Labels:")
+  table(test_set$label)
+  
+  dim(train_set)
+   dim(test_set)
+```
+
+```{r}
+
+# # compare number of images by labels
+  x <- data.frame(table(digitTrainDF$label))
+  colourCount = length(unique(digitTrainDF$label))
+  getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+  
+  gp_all <- ggplot(x, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  gp_all <- gp_all + ggtitle("Train Data Images By Labels distribution") + xlab("Labels") + ylab("Number of Images")
+  gp_all <- gp_all +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  gp_all
+```
+
+```{r}
+
+# compare number of images by labels
+  tn_set <- data.frame(table(train_set$label))
+  colourCount = length(unique(train_set$label))
+  getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+  
+  gp_tnset <- ggplot(tn_set, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  gp_tnset <- gp_tnset + ggtitle("Train Set Images - Label distribution") + xlab("Labels") + ylab("Number of Images")
+  gp_tnset <- gp_tnset +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  gp_tnset
+```
+
+```{r}
+ # compare number of images by labels
+  tst_set <- data.frame(table(test_set$label))
+  colourCount = length(unique(test_set$label))
+  getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+  
+  gp_tst_set <- ggplot(tst_set, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", 
+                                                                  fill=getPalette(colourCount))
+  gp_tst_set <- gp_tst_set + ggtitle("Test Set Images - Label distribution") + xlab("Labels") + ylab("Number of Images")
+  gp_tst_set <- gp_tst_set +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  gp_tst_set
+```
+
+```{r}
+#Load Test Data CSV as Validation data frame
+  validation_data <- "/Users/sathishrajendiran/Documents/R/HW6/digit_test.csv"
+  digitValidationDF <- data.frame(read.csv(validation_data,na.strings=c(""," ","NA"))
+                                  ,stringsAsFactors=FALSE)
+  dim(digitValidationDF) #28000   784
+  digitValidationDF[,"label"] <- ''
+  digitValidationDF$label <- as.factor(digitValidationDF$label)
+  digitValidationDF <- digitValidationDF[,c(which(colnames(digitValidationDF)=="label")
+                                            ,which(colnames(digitValidationDF)!="label"))]
+  # Preview top few rows  
+  head(digitValidationDF)
+
+```
+
+
+
+```{r}
+# Section 2: Build and tune decision tree models
+  
+  # grow tree
+  rtree <- rpart(label~. ,data=train_set, method='class', cp=0,minsplit = 1, maxdepth = 5)
+
+  #summarize rtree values
+  summary(rtree)
+  plotcp(rtree) # plot cross-validation results
+  printcp(rtree) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(rtree,main="Classification Tree for MNISDigit Tokenizer", extra= 102) # plot decision tree
+  rsq.rpart(rtree) # plot approximate R-squared and relative error for different splits (2 plots)
+
+```
+
+
+
+```{r}
+# Section 3: Prediction | Test Phase
+
+  cat("\nTrain Data Images:")
+  table(digitTrainDF$label)
+  
+  cat("\nTrain_Set - Images by Labels:")
+  table(train_set$label)
+  
+  cat("\nTest_Set - Images by Labels:")
+  table(test_set$label)
+  
+  predict_unseen <- predict(rtree, test_set, type = 'class')
+  # predict_unseen
+  table_test_matrix <- table(test_set$label, predict_unseen)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(table_test_matrix)
+  
+```
+
+```{r}
+str(digitTrainDF)
+str(test_set)
+str(train_set)
+str(digitValidationDF)
+```
+
+
+```{r}
+# Section 3: Prediction | Validation Phase
+  cat("\nTest Data Images:")
+  table(digitValidationDF$label)
+  
+  cat("\nTrain Data Images:")
+  table(digitTrainDF$label)
+  
+  cat("\nTrain_Set - Images by Labels:")
+  table(train_set$label)
+  
+  cat("\nTest_Set - Images by Labels:")
+  table(test_set$label)
+  
+  predict_final <- predict(rtree, digitValidationDF, type = 'class')
+  table_final <- table(digitValidationDF$label, predict_final)
+  cat("\n\nPrediction results : \n\n")
+  table_final 
+```
+
+
+```{r}
+  #View the final validation results and export to csv
+  predict_finaldf <- data.frame(predict_final)
+  cat("\n\nPrediction results by Label : \n\n")
+  View(predict_finaldf)
+  
+  #Export to CSV
+  write.csv(x=predict_finaldf, file="/Users/sathishrajendiran/Documents/R/HW6/predict_finaldf.csv")
+  
+```
+
+
+```{r}
+# Random Forest prediction of Digit Tokenizer data
+  EnsurePackage("randomForest")
+
+  # View(fedPapersDF1)
+  cat("\n All Images by Labels:")
+  table(test_set$label)
+    
+  fit <- randomForest(y=test_set$label, x=test_set[2:ncol(test_set)], data=test_set, ntree=100
+                      , keep.forest=FALSE, importance=TRUE)
+  print(fit) # view results
+  importance(fit) # importance of each predictor
+```
+
+```{r}
+  rf_importance <- data.frame(importance(fit)) # importance of each predictor
+  rf_importance
+```
+
+```{r}
+pca_digits <- PCA(t(select(digitTrainDF,-label)),ncp=30)
+```
+
+```{r}
+digitPCATrainDF <- data.frame(digitTrainDF$label,pca_digits$var$coord)
+# percent <- .25
+
+```
+
+```{r}
+dim(digitPCATrainDF)
+
+head(digitPCATrainDF)
+```
+
+```{r}
+ colnames(digitPCATrainDF) <- c("label","dim1","dim2","dim3","dim4","dim5","dim6","dim7","dim8","dim9","dim10","dim11","dim12","dim13"
+                                ,"dim14","dim15","dim16","dim17","dim18","dim19","dim20","dim21","dim22","dim23","dim24","dim25"
+                                ,"dim26","dim27","dim28","dim29","dim30")
+str(digitPCATrainDF)
+
+```
+
+```{r}
+# Prepare train and test data from the revised PCA Train dataset.
+  sample_size = floor(0.80*nrow(digitPCATrainDF)) 
+  # set seed to ensure you always have same random numbers generated #324 has 100% training accuracy 
+  train_index = sample(seq_len(nrow(digitPCATrainDF)),size = sample_size)
+
+  pca_train_set =digitPCATrainDF[train_index,] #creates the training dataset with row numbers stored in train_index
+  # # table(train_data$author)
+  pca_test_set=digitPCATrainDF[-train_index,]  # creates the test dataset excluding the row numbers mentioned in train_index
+  # # table(test_data$author)
+  # 
+  cat("\nImages by Labels:")
+  table(digitPCATrainDF$label)
+  cat("\nTrain_set - Images by Labels:")
+  table(pca_train_set$label)
+  cat("\nTest_set - Images by Labels:")
+  table(pca_test_set$label)
+```
+
+```{r}
+# # compare number of images by labels
+  pca_x <- data.frame(table(digitPCATrainDF$label))
+  colourCount = length(unique(digitPCATrainDF$label))
+  getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+  
+  pca_gp_all <- ggplot(pca_x, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_all <- pca_gp_all + ggtitle("Train Data Images By Labels distribution") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_all <- pca_gp_all +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  pca_gp_all
+
+```
+
+```{r}
+# # compare number of images by labels
+  pca_tn_set <- data.frame(table(pca_train_set$label))
+  colourCount = length(unique(pca_train_set$label))
+  getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+  
+  pca_gp_tnset <- ggplot(pca_tn_set, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_tnset <- pca_gp_tnset + ggtitle("Train Set Images - Label distribution") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_tnset <- pca_gp_tnset +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  pca_gp_tnset
+
+  
+```
+
+```{r}
+# # compare number of images by labels
+  pca_tst_set <- data.frame(table(pca_test_set$label))
+  colourCount = length(unique(pca_test_set$label))
+  getPalette = colorRampPalette(brewer.pal(9, "Set1"))
+  
+  pca_gp_tst_set <- ggplot(pca_tst_set, aes(x=Var1, y=Freq)) +   geom_bar(position="dodge",stat = "identity", fill=getPalette(colourCount))
+  pca_gp_tst_set <- pca_gp_tst_set + ggtitle("Test Set Images - Label distribution") + xlab("Labels") + ylab("Number of Images")
+  pca_gp_tst_set <- pca_gp_tst_set +  theme(plot.title = element_text(hjust = 0.5),axis.title = element_text())
+  pca_gp_tst_set
+```
+
+
+```{r}
+# Section 2: Build and tune decision tree models
+  
+  # grow tree
+  pca_rtree <- rpart(label~. ,data=pca_train_set, method='class', cp=0,minsplit = 1, maxdepth = 10)
+
+  #summarize rtree values
+  summary(pca_rtree)
+  plotcp(pca_rtree) # plot cross-validation results
+  printcp(pca_rtree) # plot cross-validation results
+
+  # Plot tree | lets Plot decision trees
+  rpart.plot(pca_rtree,main="Classification Tree for MNISDigit Tokenizer after PCA", extra= 102) # plot decision tree
+  rsq.rpart(pca_rtree) # plot approximate R-squared and relative error for different splits (2 plots)
+
+```
+
+```{r}
+# Section 3: Prediction | Test Phase
+
+  cat("\nTrain Data Images:")
+  table(digitPCATrainDF$label)
+  
+  cat("\nTrain_Set - Images by Labels:")
+  table(pca_train_set$label)
+  
+  cat("\nTest_Set - Images by Labels:")
+  table(pca_test_set$label)
+  
+  pca_predict_unseen <- predict(pca_rtree, pca_test_set, type = 'class')
+  # predict_unseen
+  pca_table_test_matrix <- table(pca_test_set$label, pca_predict_unseen)
+  cat("\n\nPrediction results : Confusion Matrix \n\n")
+  # table_mat
+  confusionMatrix(pca_table_test_matrix)
+```
+
+```{r}
+# Section 3: Prediction | Validation Phase
+  cat("\nTest Data Images:")
+  table(digitPCATrainDF$label)
+  
+  cat("\nTrain Data Images:")
+  table(digitTrainDF$label)
+  
+  cat("\nTrain_Set - Images by Labels:")
+  table(pca_train_set$label)
+  
+  cat("\nTest_Set - Images by Labels:")
+  table(pca_test_set$label)
+  
+  pca_predict_final <- predict(rtree, digitValidationDF, type = 'class')
+  pca_table_final <- table(digitValidationDF$label, pca_predict_final)
+  cat("\n\nPrediction results : \n\n")
+  pca_table_final 
+```
+```{r}
+ #View the final validation results and export to csv
+  pca_predict_finaldf <- data.frame(pca_predict_final)
+  cat("\n\nPrediction results by Label : \n\n")
+  View(pca_predict_finaldf)
+  
+  #Export to CSV
+  write.csv(x=pca_predict_finaldf, file="/Users/sathishrajendiran/Documents/R/HW6/pca_predict_finaldf.csv")
+ 
+  
+```
+
+```{r}
+# kNN - Training the KNN model
+pca_training_kNN <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
+set.seed(3033)
+pca_knn_fit <- train(label ~ ., data = pca_train_set, method = "knn", trControl=pca_training_kNN, preProcess = c("center", "scale")
+                     , tuneLength = 10)
+pca_knn_fit
+
+```
+
+```{r}
+#kNN - Prediction
+pca_knn_test_pred <- predict(pca_knn_fit, newdata =pca_test_set)
+View(data.frame(pca_knn_test_pred, pca_test_set$label))
+summary(pca_knn_test_pred)
+```
+
+```{r}
+#SVM - Building the Model | Linear Kernel
+
+pca_svm_model <- svm(label ~ ., data = pca_train_set, kernel= 'linear', cost =100, scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model)
+```
+
+```{r}
+#SVM - Prediction
+
+pca_svmPred <- predict(pca_svm_model, pca_test_set, type = 'prob')
+pca_svmPred <- as.data.frame(pca_svmPred)
+colnames(pca_svmPred) <- 'results'
+
+
+svmResults <- pca_test_set %>% select(label) %>% bind_cols(pca_svmPred) %>% mutate(real = factor(as.character(str_remove(label, 'V'))), prediction = factor(as.character(str_remove(results, 'V'))))
+
+confusionMatrix(svmResults$real, svmResults$prediction) #92%
+```
+
+
+
+```{r}
+#SVM - Building the Model | Linear linear | cost 10
+pca_svm_model_linear1 <- svm(label ~ ., data = pca_train_set, kernel= 'linear', cost =100, scale = FALSE, 
+                             Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model_linear1)
+
+#SVM - Prediction
+pca_svmPred_linear1 <- predict(pca_svm_model_linear1, pca_test_set, type = 'prob')
+
+#Plot the results
+pca_svmPred_linear1 <- as.data.frame(pca_svmPred_linear1)
+colnames(pca_svmPred_linear1) <- 'results'
+svmResults_linear1 <- pca_test_set %>% select(label) %>% bind_cols(pca_svmPred_linear1) %>% mutate(real = factor(as.character(str_remove(label, 'V'))), 
+                                                                                                   prediction = factor(as.character(str_remove(results, 'V'))))
+
+#Build Confusion matrix
+confusionMatrix(svmResults_linear1$real, svmResults_linear1$prediction) #92%
+
+```
+
+```{r}
+#SVM - Building the Model | Radial Kernel | cost 10
+pca_svm_model_radial1 <- svm(label ~ ., data = pca_train_set, kernel= 'radial', cost =10, scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model_radial1)
+
+#SVM - Prediction
+
+pca_svmPred_radial1 <- predict(pca_svm_model_radial1, pca_test_set, type = 'prob')
+pca_svmPred_radial1 <- as.data.frame(pca_svmPred_radial1)
+colnames(pca_svmPred_radial1) <- 'results'
+
+svmResults_radial1 <- pca_test_set %>% select(label) %>% bind_cols(pca_svmPred_radial1) %>% mutate(real = factor(as.character(str_remove(label, 'V')))
+                                                                                                   , prediction = factor(as.character(str_remove(results, 'V'))))
+
+#Build Confusion matrix
+confusionMatrix(svmResults_radial1$real, svmResults_radial1$prediction) #92.42 %
+
+```
+
+```{r}
+#SVM - Building the Model | Radial Kernel | cost 10
+pca_svm_model_radial <- svm(label ~ ., data = pca_train_set, kernel= 'radial', cost =100, scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model_radial)
+
+#SVM - Prediction
+
+pca_svmPred_radial <- predict(pca_svm_model_radial, pca_test_set, type = 'prob')
+
+
+#Plot the results
+pca_svmPred_radial <- as.data.frame(pca_svmPred_radial)
+colnames(pca_svmPred_radial) <- 'results'
+svmResults_radial <- pca_test_set %>% select(label) %>% bind_cols(pca_svmPred_radial) %>% mutate(real = factor(as.character(str_remove(label, 'V')))
+                                                                                                 , prediction = factor(as.character(str_remove(results, 'V'))))
+#Build Confusion matrix
+pca_SVM_radialMatrix <- confusionMatrix(svmResults_radial$real, svmResults_radial$prediction) #94.48 %
+pca_SVM_radialMatrix
+pca_SVM_radialMatrix$overall
+
+```
+
+```{r}
+# # digitValidationDF
+# pca_digits_validation <- PCA(t(select(digitValidationDF,-label)),ncp=30)
+# digitPCAValidationDF <- data.frame(digitValidationDF$label,pca_digits_validation$var$coord)
+# colnames(digitPCAValidationDF) <- c("label","dim1","dim2","dim3","dim4","dim5","dim6","dim7","dim8","dim9","dim10","dim11","dim12","dim13"
+#                               ,"dim14","dim15","dim16","dim17","dim18","dim19","dim20","dim21","dim22","dim23","dim24","dim25"
+#                               ,"dim26","dim27","dim28","dim29","dim30")
+# str(digitPCAValidationDF)
+```
+
+```{r}
+#SVM - Building the Model | polynomial polynomial | cost 10
+pca_svm_model_polynomial <- svm(label ~ ., data = pca_train_set, kernel= 'polynomial', cost =100, scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_svm_model_polynomial)
+
+#SVM - Prediction
+
+pca_svmPred_polynomial <- predict(pca_svm_model_polynomial, pca_test_set, type = 'prob')
+
+#Plot the results
+pca_svmPred_polynomial <- as.data.frame(pca_svmPred_polynomial)
+colnames(pca_svmPred_polynomial) <- 'results'
+svmResults_polynomial <- pca_test_set %>% select(label) %>% bind_cols(pca_svmPred_polynomial) %>% mutate(real = factor(as.character(str_remove(label, 'V')))
+                                                                                                 , prediction = factor(as.character(str_remove(results, 'V'))))
+#Build Confusion matrix
+pca_SVM_ploynomialMatrix <- confusionMatrix(svmResults_polynomial$real, svmResults_polynomial$prediction) #94.48 %
+pca_SVM_ploynomialMatrix
+pca_SVM_ploynomialMatrix$overall
+```
+
+```{r}
+#naiveBayes - Building the Model
+pca_NB_model <- naiveBayes(label ~ ., data = pca_train_set, cost =100, scale = FALSE, Probability = TRUE, Cross = 3,type = 'C')
+summary(pca_NB_model)
+
+#naiveBayes - Prediction
+
+pca_NB_Pred <- predict(pca_NB_model, pca_test_set, type = 'class')
+pca_NB_Pred <- as.data.frame(pca_NB_Pred)
+colnames(pca_NB_Pred) <- 'results'
+
+pca_NB_results <- pca_test_set %>% select(label) %>% bind_cols(pca_NB_Pred) %>% mutate(real = factor(as.character(str_remove(label, 'V')))
+                                                                                       , prediction = factor(as.character(str_remove(results, 'V'))))
+#Build Confusion matrix
+pca_NB_Matrix <- confusionMatrix(pca_NB_results$real, pca_NB_results$prediction) #86.02 %
+pca_NB_Matrix
+x <- pca_NB_Matrix$overall
+x
+```
+
+```{r}
+#Plotting the matrix
+
+flip <- function(matrix) {
+        apply(matrix,2,rev)
+}
+
+#random sampling
+plotdigit <- function(datarow, rm1=F) {
+  title <- datarow[1]
+  if(rm1){
+    datarow <- datarow[-1]
+  }
+  datarow <- as.numeric(datarow)
+  x <- rep(0:27)/27
+  y <- rep(0:27)/27
+  z <- matrix(datarow,ncol=28,byrow=T)
+  rotate <- function(x) t(apply(x,2,rev))
+  z <- rotate(z)
+  image(x,y,z,main=paste("actual value:",title),col=gray.colors(255,start=1,end=0),asp=1,xlim=c(0,1)
+        ,ylim=c(-0.1,1.1),useRaster=T,axes=F,xlab='',ylab='')
+}
+
+par(mfrow=c(3,4))
+set.seed(1)
+rows <- sample(1:42000,size=12)
+for(i in rows){
+  plotdigit(train_set[i,],rm1=T)
+}
+```
+
+```{r}
+# 
+# # Random Forest prediction of Digit Tokenizer  data
+# 
+#   # View(fedPapersDF1)
+#   cat("\n All Images by Labels:")
+#   table(train_set$label)
+#     
+#   pca_rf_fit <- randomForest(y=train_set$label, x=train_set[2:ncol(train_set)], data=train_set, ntree=50
+#                       , keep.forest=FALSE, importance=TRUE)
+#   print(pca_rf_fit) # view results
+#   importance(pca_rf_fit) # importance of each predictor
+```
+
+<!-- # ```{r} -->
+<!-- #   rf_importance <- data.frame(importance(pca_rf_fit)) # importance of each predictor -->
+<!-- #   rf_importance -->
+```
+
